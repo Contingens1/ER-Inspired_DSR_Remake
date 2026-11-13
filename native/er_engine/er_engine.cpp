@@ -257,6 +257,7 @@ static void AirControlTick(float dt);   // nizej, sterowanie w locie
 static void AirControlOnPlayAnim(int anim, int layer);
 static void PhysProbeTick();            // nizej, sonda fizyki skoku (tylko odczyt)
 static void EnemyProbeTick();           // below: enemy attack probe (read-only, ER_DIAG)
+static void TargetProbeTick(void* p3);  // below: enemy target / aggro probe (read-only, ER_DIAG)
 static void HangProbeTick(const BYTE* ctx, void* p3);  // below: frozen-player probe (read-only, ER_DIAG)
 static void AirMomentumTick(float dt);  // nizej, rozped w spadaniu po skoku
 static void AirMomentumStart(int anim);
@@ -779,7 +780,7 @@ static void __fastcall InputDetour(void* ctx, float dt, void* p3) {
     AttackSpeedTick(dt);
     AirControlTick(dt);
     AirMomentumTick(dt);
-    if (kDiag) { PhysProbeTick(); EnemyProbeTick(); HangProbeTick(static_cast<const BYTE*>(ctx), p3); }
+    if (kDiag) { PhysProbeTick(); EnemyProbeTick(); TargetProbeTick(p3); HangProbeTick(static_cast<const BYTE*>(ctx), p3); }
     AirAttackTick(dt);
     if (kDiag) {  // F8 = znacznik w logu (podzial testu na kroki)
         static bool f8 = false;
@@ -1056,6 +1057,99 @@ static void EnemyProbeTick() {
     }
 }
 
+// --- Enemy target probe (ER_DIAG only, read-only) ----------------------------------------------
+// Free sprint should end when an enemy aggroes (as in Elden Ring), not only after the first hit. There is
+// no known "AI target" field. Hypothesis: enemies use the same ChrIns+0x1A0 the player uses for the lock-on
+// target. The probe registers every non-player character seen in PlayAnim (owner = *(ctx+0x10)) and logs:
+//  - changes of the enemy's +0x1A0 (qword) with the distance to the player ("target"),
+//  - when the player locks on: which registered enemy holds that value in its first 0x100 bytes (handle offset),
+//  - on an enemy's first attack (3000-3099, surely aggroed): dwords in +0x000..+0x5FF that went from zero to
+//    non-zero or back since the character was first seen (idle) - candidates if +0x1A0 is not it.
+struct TargetProbe { BYTE* chr; void* ctx; DWORD seenAt; ULONG64 target; bool attacked; DWORD idle[0x180]; };
+static TargetProbe g_targetProbe[48] = {};
+
+static void TargetProbeOnPlayAnim(void* ctx, int anim, int layer) {
+    if (!ctx || ctx == g_playerAnimCtx || ctx == g_rollCtx) return;
+    BYTE* chr = nullptr;
+    __try { chr = *reinterpret_cast<BYTE**>(static_cast<BYTE*>(ctx) + 0x10); } __except (EXCEPTION_EXECUTE_HANDLER) { return; }
+    if (reinterpret_cast<ULONG_PTR>(chr) < 0x10000) return;
+    DWORD now = GetTickCount();
+    TargetProbe* slot = nullptr;
+    for (auto& t : g_targetProbe) if (t.chr == chr) { slot = &t; break; }
+    if (!slot) {   // new character: take a free slot or the one not seen for the longest time
+        slot = &g_targetProbe[0];
+        for (auto& t : g_targetProbe) {
+            if (!t.chr) { slot = &t; break; }
+            if (now - t.seenAt > now - slot->seenAt) slot = &t;
+        }
+        slot->chr = chr; slot->ctx = ctx; slot->attacked = false; slot->target = 0;
+        __try {
+            memcpy(slot->idle, chr, sizeof(slot->idle));
+            slot->target = *reinterpret_cast<ULONG64*>(chr + 0x1A0);
+        } __except (EXCEPTION_EXECUTE_HANDLER) { slot->chr = nullptr; return; }
+        Log("[%7lu ms] target probe: new chr %p (ctx %p, first anim %d L%d), +0x1A0 = %llX", now - g_t0, chr, ctx, anim,
+            layer, slot->target);
+    }
+    slot->seenAt = now ? now : 1;
+    if (layer != 7 || anim < 3000 || anim > 3099 || slot->attacked) return;
+    slot->attacked = true;
+    int n = 0;
+    __try {
+        const DWORD* cur = reinterpret_cast<const DWORD*>(chr);
+        for (int i = 0; i < 0x180 && n < 40; i++) {
+            if ((slot->idle[i] == 0) == (cur[i] == 0)) continue;
+            Log("[%7lu ms] target probe: chr %p first attack %d, +0x%03X: idle %08lX -> %08lX", now - g_t0, chr, anim, i * 4,
+                slot->idle[i], cur[i]);
+            n++;
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+    }
+}
+
+static void TargetProbeTick(void* p3) {
+    static DWORD lastAt = 0;
+    static ULONG64 lastPlayerTarget = 0;
+    DWORD now = GetTickCount();
+    if (now - lastAt < 200) return;
+    lastAt = now;
+    BYTE* pl = ChrPosData();
+    __try {
+        BYTE* me = *reinterpret_cast<BYTE**>(static_cast<BYTE*>(p3) + 0x10);
+        if (reinterpret_cast<ULONG_PTR>(me) < 0x10000) return;
+        ULONG64 mine = *reinterpret_cast<ULONG64*>(me + 0x1A0);
+        if (mine != lastPlayerTarget) {
+            Log("[%7lu ms] target probe: player +0x1A0 %llX -> %llX (player chr %p)", now - g_t0, lastPlayerTarget, mine, me);
+            lastPlayerTarget = mine;
+            DWORD lo = static_cast<DWORD>(mine);
+            for (auto& t : g_targetProbe) {
+                if (!t.chr || !lo) continue;
+                const DWORD* d = reinterpret_cast<const DWORD*>(t.chr);
+                for (int i = 0; i < 0x40; i++)
+                    if (d[i] == lo) Log("[%7lu ms] target probe:   locked value found in chr %p at +0x%02X", now - g_t0, t.chr, i * 4);
+                if (reinterpret_cast<ULONG64>(t.chr) == mine) Log("[%7lu ms] target probe:   locked value = chr %p itself", now - g_t0, t.chr);
+            }
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return;
+    }
+    for (auto& t : g_targetProbe) {
+        if (!t.chr || now - t.seenAt > 120000) continue;
+        ULONG64 v;
+        __try { v = *reinterpret_cast<ULONG64*>(t.chr + 0x1A0); } __except (EXCEPTION_EXECUTE_HANDLER) { t.chr = nullptr; continue; }
+        if (v == t.target) continue;
+        float dist = -1.f;
+        BYTE* e = PosDataOfAnimCtx(t.ctx);
+        if (e && pl) __try {
+            float dx = *reinterpret_cast<float*>(pl + 0x10) - *reinterpret_cast<float*>(e + 0x10);
+            float dz = *reinterpret_cast<float*>(pl + 0x18) - *reinterpret_cast<float*>(e + 0x18);
+            dist = sqrtf(dx * dx + dz * dz);
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+        }
+        Log("[%7lu ms] target probe: chr %p +0x1A0 %llX -> %llX, dist %.1f m", now - g_t0, t.chr, t.target, v, dist);
+        t.target = v;
+    }
+}
+
 // A hit while drinking: the patched ESD plays the item animation on the upper body (layers 6 / 18) and the
 // game's damage reaction (2000-2099 on layers 11 / 26) does not end it - a knockdown then ran for 3 s with
 // the torso still held by the drink pose (log 2026-11-13: 2026 at 175.06 s, layer 6 released at 178.02 s).
@@ -1079,7 +1173,7 @@ static void ItemUpperOnPlayAnim(void* ctx, void* out, int anim, int layer, char 
 
 static void* __fastcall PlayAnimDetour(void* ctx, void* out, int a3, int a4, char a5, int a6, int a7) {
     if (kDiag && a3 >= 0) LogFirstUse(a3, a4);
-    if (kDiag) EnemyProbeOnPlayAnim(ctx, a3, a4);
+    if (kDiag) { EnemyProbeOnPlayAnim(ctx, a3, a4); TargetProbeOnPlayAnim(ctx, a3, a4); }
     ItemUpperOnPlayAnim(ctx, out, a3, a4, a5, a6);
     // Diagnostyka: kazde zlecenie na warstwie glownej (takze koniec animacji, a3 = -1), z ctx - gracz ma ten sam ctx co skok.
     if (kDiag && (a4 == 7 || a4 == 23))
