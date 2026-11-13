@@ -329,6 +329,24 @@ def install(args, results: dict) -> None:
                     speed = bytes(ev.GetParameterBytes(False))[:4]
                     anim.Events.Add(sf.TAE.Event(s1, e1, 224, tpl.Unk04, net_bytes(speed), False))
                 mode += f", turn {len(old_turn)}->{len(new_turn)}"
+                # JT7 (turn lock) has to come from NR as well: NR places it exactly between its turn
+                # windows, while the warped template windows land on top of them and cancel the turning
+                # (probe log 2026-11-13: 3018 stopped turning at 0.77 s, 3019 never aimed its lunge).
+                old_lock = [ev for ev in anim.Events if jt_of(ev) == 7]
+                new_lock = [ev for ev in nanim.Events if jt_of(ev) == 7]
+                tpl7 = old_lock[0] if old_lock else next(
+                    (ev for a in tae.Animations for ev in a.Events if jt_of(ev) == 7), None)
+                if tpl7 is not None:
+                    keep = [ev for ev in anim.Events if jt_of(ev) != 7]
+                    anim.Events.Clear()
+                    for ev in keep:
+                        anim.Events.Add(ev)
+                    for ev in new_lock:
+                        s1 = float(ev.StartTime)
+                        e1 = min(float(ev.EndTime), res["nr_dur"])
+                        if e1 > s1:
+                            anim.Events.Add(clone(tpl7, s1, e1))
+                    mode += f", lock {len(old_lock)}->{len(new_lock)}"
         say(f"  {new_id if new_id == dsr_id else f'{new_id} (tpl {dsr_id}, NR {nr_id})'}: {mode:28s} DSR hits {['%.2f-%.2f' % tuple(h) for h in dh or []]} -> "
             f"NR {['%.2f-%.2f' % tuple(h) for h in nh or []]}; {n_ev} events moved")
     for spec in args.jt:  # ANIM:JT:START - move one window of an untouched DSR animation
