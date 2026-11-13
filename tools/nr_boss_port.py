@@ -190,10 +190,18 @@ def install(args, results: dict) -> None:
             mode = f"{len(dh)} hit(s)"
             for (ds, dt), (ns, nt) in zip(dh, nh):
                 anchors += [(ds, ns), (dt, nt)]
-        elif dh and nh:  # different number of windows: pair them in order, the extra ones have no partner
-            mode = f"first {min(len(dh), len(nh))} of {len(dh)} vs {len(nh)} hits"
-            for (ds, dt), (ns, nt) in zip(dh, nh):
-                anchors += [(ds, ns), (dt, nt)]
+        elif dh and nh:  # different number of windows: each window of the shorter list takes the nearest
+            # unused one of the longer list (by start time, order kept); the rest have no partner
+            short, long_, swap = (dh, nh, False) if len(dh) < len(nh) else (nh, dh, True)
+            j0, n_pairs = 0, 0
+            for w in short:
+                if j0 >= len(long_):
+                    break
+                j = min(range(j0, len(long_)), key=lambda k: abs(long_[k][0] - w[0]))
+                dwin, nwin = (long_[j], w) if swap else (w, long_[j])
+                anchors += [(dwin[0], nwin[0]), (dwin[1], nwin[1])]
+                j0, n_pairs = j + 1, n_pairs + 1
+            mode = f"nearest {n_pairs} of {len(dh)} vs {len(nh)} hits"
         # NR clips can run far past the last event (a001 Artorias: 9.3 s clip, events end at 4.4 s)
         new_end = min(res["nr_dur"], ndur) if ndur > anchors[-1][1] + 0.3 else res["nr_dur"]
         anchors.append((max(res["dsr_dur"], anchors[-1][0] + 0.01), max(new_end, anchors[-1][1] + 0.01)))
@@ -230,6 +238,7 @@ def main(argv=None) -> int:
     ap.add_argument("--lo", type=int, default=3000)
     ap.add_argument("--hi", type=int, default=3999)
     ap.add_argument("--install", action="store_true")
+    ap.add_argument("--reuse", action="store_true", help="keep already ported HKX, redo only the install")
     ap.add_argument("--tag", default="", help="suffix of the files_<dsr> folder and of the report (variants)")
     args = ap.parse_args(argv)
 
@@ -302,6 +311,14 @@ def main(argv=None) -> int:
     for nr_id, dsr_id in pairs:
         out = BP / "nr_ported" / args.dsr / f"a00_{dsr_id:04d}.hkx"
         try:
+            if args.reuse and out.exists():  # ported earlier: only the lengths are needed for the install
+                ename = f"a{nr_id // 1000000:03d}_{nr_id % 1000000:06d}.hkx"
+                ec, _ = load_anim(e.AnimationHKX, ED / ename, comp_for(ename))
+                dc, _ = load_anim(d.AnimationHKX, find_ci(DD, f"a00_{dsr_id:04d}.hkx"))
+                results[(nr_id, dsr_id)] = {"nr_dur": float(ec.hkx_animation.duration),
+                                            "dsr_dur": float(dc.hkx_animation.duration), "path": out}
+                say(f"{dsr_id:5d} {nr_id:6d} reused {out.name}")
+                continue
             r = port_one(ctx, nr_id, dsr_id, out)
         except Exception as ex:
             say(f"{dsr_id:5d} {nr_id:6d} FAILED: {type(ex).__name__}: {str(ex)[:200]}")
