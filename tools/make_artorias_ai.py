@@ -16,6 +16,7 @@ second phase; the phase-2 ideas are carried over with DS1 goals, tuned for the c
 New animation numbers stay inside 3000-3029, the range enemyCommon.esd accepts.
 
   python tools/make_artorias_ai.py            # writes the .lua and builds the luabnd into the test package
+  python tools/make_artorias_ai.py 1.0 _p2test   # test variant: phase 2 from the start of the fight
 """
 from __future__ import annotations
 
@@ -161,11 +162,19 @@ def main() -> int:
                  HELPER + "function Artorius410000_Act20(ai, goal, paramTbl)\n")
     if re.search(r"\d,\d", t):
         raise RuntimeError("decimal comma left in the script")
-    OUT_LUA.write_text(t, encoding="shift_jis", newline="\n")
-    print(f"written {OUT_LUA} ({len(t.splitlines())} lines)")
-    OUT_BND.parent.mkdir(parents=True, exist_ok=True)
+    out_lua, out_bnd = OUT_LUA, OUT_BND
+    if len(sys.argv) > 2:  # test variant: other phase-2 threshold, written to files_c4100_v2<tag>
+        phase, tag = sys.argv[1], sys.argv[2]
+        n = t.count(f"<= {PHASE2}")
+        t = t.replace(f"<= {PHASE2}", f"<= {phase}")
+        print(f"phase-2 threshold {PHASE2} -> {phase} in {n} places")
+        out_lua = OUT_LUA.with_name(f"410000_battle.nr_v2{tag}.lua")
+        out_bnd = OUT_BND.parents[1].with_name(f"files_c4100_v2{tag}") / "script" / OUT_BND.name
+    out_lua.write_text(t, encoding="shift_jis", newline="\n")
+    print(f"written {out_lua} ({len(t.splitlines())} lines)")
+    out_bnd.parent.mkdir(parents=True, exist_ok=True)
     return subprocess.call([sys.executable, str(ROOT / "tools" / "ai_lua.py"), "build", "m12_01_00_00",
-                            "410000_battle.lua", str(OUT_LUA), str(OUT_BND)])
+                            "410000_battle.lua", str(out_lua), str(out_bnd)])
 
 
 if __name__ == "__main__":

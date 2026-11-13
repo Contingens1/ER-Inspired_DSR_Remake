@@ -11,12 +11,17 @@ VARIANTS = {
     "artorias_v2": ("Artorias (c4100) v2: all original attacks kept, 8 Nightreign phase-2 attacks added as "
                     "3017-3019 / 3024-3028, AI with phase 2 below 65 % HP (tools/make_artorias_ai.py)",
                     ["files_c4100_v2"]),
+    "artorias_v2_p2test": ("TEST: Artorias v2 with phase 2 active from the start of the fight (to see every "
+                           "new attack); not the intended balance", ["files_c4100_v2_p2test"]),
     "centipede": ("Centipede Demon (c5200): attacks 3000-3009 with Nightreign animations; original AI",
                   ["files_c5200"]),
     "gaping": ("Gaping Dragon (c5260): attacks 3000-3010 with Nightreign animations; original AI",
                ["files_c5260"]),
     "all": ("all three bosses at once", ["files_c4100_nr_new", "files_c5200", "files_c5260"]),
 }
+
+# Variants that load a player DLL other than the main mod's (untested player changes ride along).
+PLAYER_DLL = {"artorias_v2_p2test": "../c0000_er_engine_stamina/bin/er_engine.dll"}
 
 for key, (desc, dirs) in VARIANTS.items():
     missing = [d for d in dirs if not (ROOT / d / "chr").is_dir()]
@@ -28,7 +33,7 @@ for key, (desc, dirs) in VARIANTS.items():
         f"# Nightreign boss test - {desc}.\n"
         "# Player mod (er_engine: DLL + c0000 files) loaded unchanged from ../c0000_er_engine.\n"
         "[modengine]\ndebug = false\nexternal_dlls = [\n"
-        '    "../c0000_er_engine/bin/er_engine.dll",\n]\n\n'
+        f'    "{PLAYER_DLL.get(key, "../c0000_er_engine/bin/er_engine.dll")}",\n]\n\n'
         "[extension.mod_loader]\nenabled = true\nloose_params = false\nmods = [\n"
         f"{mods}"
         '    { enabled = true, name = "er_engine", path = "../c0000_er_engine/files" },\n]\n\n'

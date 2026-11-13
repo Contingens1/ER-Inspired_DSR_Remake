@@ -654,8 +654,8 @@ static void ForceEndPlayerAnim();  // nizej, przy CancelLandingRollIfIdle
 // --- Free stamina out of combat (as in Elden Ring) ----------------------------------------------
 // The game has a per-character "no stamina consumption" flag: ChrFlags2 bit 0x400 (DSR-Gadget
 // ChrData1+0x514; +0x10 in this exe = chr+0x524 - the input handler tests NoMove 0x200 / NoAttack 0x100
-// at chr+0x525). The DLL sets it on the player while out of combat and only for sprint, rolls, backstep
-// and jumps: any other full-body animation (attack, cast, item) clears it, so those still cost stamina.
+// at chr+0x525). The DLL sets it on the player while out of combat and only while sprinting; any
+// full-body animation (roll, jump, attack, cast, item) clears it, so those still cost stamina.
 // "In combat" is a heuristic (no enemy list yet): lock-on target, HP lost recently, or attacked recently.
 constexpr DWORD kCombatAfterHitMs = 8000;
 constexpr DWORD kCombatAfterAttackMs = 5000;
@@ -663,9 +663,9 @@ static int g_mainAnim = -1;              // player's current layer-7 animation (
 static DWORD g_lastAttackAnimAt = 0;
 static BYTE* g_freeStamChr = nullptr;    // character whose flag this DLL set
 
-static bool IsFreeStaminaAnim(int a) {
-    return a == -1 || a == 680 || (a >= 700 && a <= 723) || (a >= 900 && a <= 902);
-}
+// 2026-11-13 (player's decision after the first test): only sprinting is free. Rolls, backstep, jumps and
+// attacks always cost stamina, so the flag is up only while no full-body animation plays.
+static bool IsFreeStaminaAnim(int a) { return a == -1; }
 
 // Called from PlayAnimDetour for the player's layer 7.
 static void TrackPlayerMainAnim(int animId, int layer) {
@@ -686,7 +686,10 @@ static void TrackPlayerMainAnim(int animId, int layer) {
     }
 }
 
-static void FreeStaminaTick(void* p3) {
+// Runs after the input handler: the flag is set only in frames where the sprint flag (+0x1E4) is on and
+// the handler raised no roll / backstep / jump request (+0x93..0x96, +0x8E, +0xAE) - those requests are
+// served later in the frame and must find the flag down.
+static void FreeStaminaTick(const BYTE* ctx, void* p3) {
     BYTE*& ours = g_freeStamChr;
     static int lastHp = -1;
     static DWORD lastHpDropAt = 0;
@@ -703,7 +706,9 @@ static void FreeStaminaTick(void* p3) {
         bool hit = lastHpDropAt && now - lastHpDropAt < kCombatAfterHitMs;
         bool attacked = g_lastAttackAnimAt && now - g_lastAttackAnimAt < kCombatAfterAttackMs;
         bool combat = locked || hit || attacked;
-        bool want = g_freeStaminaOn && !combat && IsFreeStaminaAnim(g_mainAnim);
+        bool sprinting = ctx[0x1E4] == 1;
+        bool request = ctx[0x8E] || ctx[0x93] || ctx[0x94] || ctx[0x95] || ctx[0x96] || ctx[0xAE];
+        bool want = g_freeStaminaOn && !combat && sprinting && !request && IsFreeStaminaAnim(g_mainAnim);
         DWORD* flags = reinterpret_cast<DWORD*>(chr + 0x524);
         if (want) {
             if (!(*flags & 0x400)) { *flags |= 0x400; ours = chr; }
@@ -714,7 +719,7 @@ static void FreeStaminaTick(void* p3) {
         int state = !g_freeStaminaOn ? 0 : combat ? (locked ? 1 : hit ? 2 : 3) : 4;
         if (state != lastState) {
             static const char* kNames[] = {"off", "combat (lock-on)", "combat (HP lost)", "combat (attacked)",
-                                           "out of combat - sprint/roll/jump free"};
+                                           "out of combat - sprint free"};
             Log("[%7lu ms] stamina: %s (hp %d, stamina %d)", now - g_t0, kNames[state], hp,
                 *reinterpret_cast<int*>(chr + 0x3F8));
             lastState = state;
@@ -732,7 +737,6 @@ static void __fastcall InputDetour(void* ctx, float dt, void* p3) {
         if (mag < 0.5f) g_rollAxisSince = 0; else if (!g_rollAxisSince) g_rollAxisSince = now ? now : 1;
     }
     g_fakeRollPress = RollBufferPre(static_cast<BYTE*>(ctx), p3);
-    FreeStaminaTick(p3);  // before the handler: the flag must be up when a roll / sprint is accepted
     g_origInput(ctx, dt, p3);
     g_fakeRollPress = false;
     SuppressSprintWhileDrinking(static_cast<BYTE*>(ctx));
@@ -741,6 +745,7 @@ static void __fastcall InputDetour(void* ctx, float dt, void* p3) {
     RollBufferTick(static_cast<BYTE*>(ctx), dt, p3);
     InjectStandingJump(static_cast<BYTE*>(ctx), dt, p3);
     AirAttackBuffer(static_cast<BYTE*>(ctx));
+    FreeStaminaTick(static_cast<const BYTE*>(ctx), p3);
     AttackSpeedTick(dt);
     AirControlTick(dt);
     AirMomentumTick(dt);
