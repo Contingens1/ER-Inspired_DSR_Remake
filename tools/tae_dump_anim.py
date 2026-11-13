@@ -29,7 +29,7 @@ def main(argv: list[str]) -> int:
             p = bytes(e.GetParameterBytes(False))
             jt = f" JT{struct.unpack_from('<i', p)[0]}" if int(e.Type) == 0 and len(p) >= 4 else ""
             ints = struct.unpack_from(f"<{min(4, len(p) // 4)}i", p) if len(p) >= 4 else ()
-            print(f"   {e.StartTime:6.3f}-{e.EndTime:6.3f}  type {int(e.Type):3d}{jt:6s} {ints}")
+            print(f"   {e.StartTime:6.3f}-{e.EndTime:6.3f}  type {int(e.Type):3d}{jt:6s} {ints}  [{len(p)} B] {p[:16].hex(' ')}")
     return 0
 
 

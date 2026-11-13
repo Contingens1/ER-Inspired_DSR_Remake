@@ -217,6 +217,29 @@ def install(args, results: dict) -> None:
                 e1 = max(round(warp(float(ev.EndTime), anchors) * 30) / 30.0, s1 + 1 / 30.0)
                 ev.StartTime, ev.EndTime = s1, e1
                 n_ev += 1
+        if args.nr_turn and anim is not None:
+            # Turning toward the target: take the SetTurnSpeed (224) windows of the NR animation instead of
+            # the warped DSR ones (first float = deg/s in both formats). Without this a new multi-part
+            # attack keeps the heading of its first part (Artorias 3026: the leap missed the player).
+            nanim = (next((a for a in ntae.Animations if int(a.ID) == nr_id), None)
+                     or next((a for a in ntae.Animations if int(a.ID) == 1000000 + nr_id), None))
+            old_turn = [ev for ev in anim.Events if int(ev.Type) == 224]
+            new_turn = [ev for ev in (nanim.Events if nanim is not None else []) if int(ev.Type) == 224]
+            tpl = old_turn[0] if old_turn else next(
+                (ev for a in tae.Animations for ev in a.Events if int(ev.Type) == 224), None)
+            if new_turn and tpl is not None:
+                keep = [ev for ev in anim.Events if int(ev.Type) != 224]
+                anim.Events.Clear()
+                for ev in keep:
+                    anim.Events.Add(ev)
+                for ev in new_turn:
+                    s1 = float(ev.StartTime)
+                    e1 = min(float(ev.EndTime), res["nr_dur"])
+                    if e1 <= s1:
+                        continue
+                    speed = bytes(ev.GetParameterBytes(False))[:4]
+                    anim.Events.Add(sf.TAE.Event(s1, e1, 224, tpl.Unk04, net_bytes(speed), False))
+                mode += f", turn {len(old_turn)}->{len(new_turn)}"
         say(f"  {dsr_id}: {mode:28s} DSR hits {['%.2f-%.2f' % tuple(h) for h in dh or []]} -> "
             f"NR {['%.2f-%.2f' % tuple(h) for h in nh or []]}; {n_ev} events moved")
     tentry.Bytes = to_memory(tae.Write())
@@ -238,6 +261,7 @@ def main(argv=None) -> int:
     ap.add_argument("--lo", type=int, default=3000)
     ap.add_argument("--hi", type=int, default=3999)
     ap.add_argument("--install", action="store_true")
+    ap.add_argument("--nr-turn", action="store_true", help="install: SetTurnSpeed windows from the NR TAE")
     ap.add_argument("--reuse", action="store_true", help="keep already ported HKX, redo only the install")
     ap.add_argument("--tag", default="", help="suffix of the files_<dsr> folder and of the report (variants)")
     args = ap.parse_args(argv)
