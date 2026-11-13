@@ -496,14 +496,17 @@ static void OmniRollOnPlayAnim(void* ctx, int anim, int layer, int a6) {
     }
 }
 
+static bool g_freeStaminaOn = true;  // [Stamina] FreeOutOfCombat (see FreeStaminaTick)
+
 static void LoadConfigIni() {
     char iniPath[MAX_PATH];
     sprintf_s(iniPath, "%ser_engine.ini", g_dir);
     g_omniRollOn = GetPrivateProfileIntA("Roll", "OmniRoll", 1, iniPath) != 0;
     g_rollBufferOn = GetPrivateProfileIntA("Roll", "RollBuffer", 1, iniPath) != 0;
     g_lockSprintOn = GetPrivateProfileIntA("Roll", "LockOnSprint", 1, iniPath) != 0;
-    Log("config: OmniRoll=%d RollBuffer=%d LockOnSprint=%d (%s)", g_omniRollOn ? 1 : 0, g_rollBufferOn ? 1 : 0,
-        g_lockSprintOn ? 1 : 0, iniPath);
+    g_freeStaminaOn = GetPrivateProfileIntA("Stamina", "FreeOutOfCombat", 1, iniPath) != 0;
+    Log("config: OmniRoll=%d RollBuffer=%d LockOnSprint=%d FreeOutOfCombat=%d (%s)", g_omniRollOn ? 1 : 0,
+        g_rollBufferOn ? 1 : 0, g_lockSprintOn ? 1 : 0, g_freeStaminaOn ? 1 : 0, iniPath);
 }
 
 static bool IsMoveKey(int c) { return c == 'W' || c == 'A' || c == 'S' || c == 'D'; }
@@ -648,6 +651,78 @@ static void RollBufferTick(BYTE* ctx, float dt, void* p3) {
 
 static void ForceEndPlayerAnim();  // nizej, przy CancelLandingRollIfIdle
 
+// --- Free stamina out of combat (as in Elden Ring) ----------------------------------------------
+// The game has a per-character "no stamina consumption" flag: ChrFlags2 bit 0x400 (DSR-Gadget
+// ChrData1+0x514; +0x10 in this exe = chr+0x524 - the input handler tests NoMove 0x200 / NoAttack 0x100
+// at chr+0x525). The DLL sets it on the player while out of combat and only for sprint, rolls, backstep
+// and jumps: any other full-body animation (attack, cast, item) clears it, so those still cost stamina.
+// "In combat" is a heuristic (no enemy list yet): lock-on target, HP lost recently, or attacked recently.
+constexpr DWORD kCombatAfterHitMs = 8000;
+constexpr DWORD kCombatAfterAttackMs = 5000;
+static int g_mainAnim = -1;              // player's current layer-7 animation (-1 = none)
+static DWORD g_lastAttackAnimAt = 0;
+static BYTE* g_freeStamChr = nullptr;    // character whose flag this DLL set
+
+static bool IsFreeStaminaAnim(int a) {
+    return a == -1 || a == 680 || (a >= 700 && a <= 723) || (a >= 900 && a <= 902);
+}
+
+// Called from PlayAnimDetour for the player's layer 7.
+static void TrackPlayerMainAnim(int animId, int layer) {
+    if (layer != 7) return;
+    g_mainAnim = animId;
+    if (!IsFreeStaminaAnim(animId)) {
+        // Drop the flag right away: the cost of this action may be charged before the next input tick.
+        if (g_freeStamChr) __try {
+            *reinterpret_cast<DWORD*>(g_freeStamChr + 0x524) &= ~0x400u;
+            g_freeStamChr = nullptr;
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+        }
+        int id = animId % 10000;
+        if (animId >= 200000 && id >= 3000 && id < 6000) {  // weapon attack (groups 20-49 and special 12x-14x)
+            DWORD now = GetTickCount();
+            g_lastAttackAnimAt = now ? now : 1;
+        }
+    }
+}
+
+static void FreeStaminaTick(void* p3) {
+    BYTE*& ours = g_freeStamChr;
+    static int lastHp = -1;
+    static DWORD lastHpDropAt = 0;
+    static int lastState = -1;
+    BYTE* chr = nullptr;
+    __try {
+        chr = *reinterpret_cast<BYTE**>(static_cast<BYTE*>(p3) + 0x10);
+        if (reinterpret_cast<ULONG_PTR>(chr) < 0x10000) return;
+        DWORD now = GetTickCount();
+        int hp = *reinterpret_cast<int*>(chr + 0x3E8);
+        if (lastHp >= 0 && hp < lastHp) lastHpDropAt = now ? now : 1;
+        lastHp = hp;
+        bool locked = chr[0x1A0] != 0;
+        bool hit = lastHpDropAt && now - lastHpDropAt < kCombatAfterHitMs;
+        bool attacked = g_lastAttackAnimAt && now - g_lastAttackAnimAt < kCombatAfterAttackMs;
+        bool combat = locked || hit || attacked;
+        bool want = g_freeStaminaOn && !combat && IsFreeStaminaAnim(g_mainAnim);
+        DWORD* flags = reinterpret_cast<DWORD*>(chr + 0x524);
+        if (want) {
+            if (!(*flags & 0x400)) { *flags |= 0x400; ours = chr; }
+        } else if (ours == chr && (*flags & 0x400)) {
+            *flags &= ~0x400u;
+            ours = nullptr;
+        }
+        int state = !g_freeStaminaOn ? 0 : combat ? (locked ? 1 : hit ? 2 : 3) : 4;
+        if (state != lastState) {
+            static const char* kNames[] = {"off", "combat (lock-on)", "combat (HP lost)", "combat (attacked)",
+                                           "out of combat - sprint/roll/jump free"};
+            Log("[%7lu ms] stamina: %s (hp %d, stamina %d)", now - g_t0, kNames[state], hp,
+                *reinterpret_cast<int*>(chr + 0x3F8));
+            lastState = state;
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+    }
+}
+
 static void __fastcall InputDetour(void* ctx, float dt, void* p3) {
     if (!g_logToRing) { Log("pierwsza klatka gry: dalsze wpisy ida do bufora w pamieci, F8 zrzuca go do pliku"); g_logToRing = true; }
     PollKeys();
@@ -657,6 +732,7 @@ static void __fastcall InputDetour(void* ctx, float dt, void* p3) {
         if (mag < 0.5f) g_rollAxisSince = 0; else if (!g_rollAxisSince) g_rollAxisSince = now ? now : 1;
     }
     g_fakeRollPress = RollBufferPre(static_cast<BYTE*>(ctx), p3);
+    FreeStaminaTick(p3);  // before the handler: the flag must be up when a roll / sprint is accepted
     g_origInput(ctx, dt, p3);
     g_fakeRollPress = false;
     SuppressSprintWhileDrinking(static_cast<BYTE*>(ctx));
@@ -747,6 +823,7 @@ constexpr bool kDrinkUpperRedirect = false;
 
 static void TrackDrink(int animId, int layer);  // nizej, wolny chod przy piciu
 static void TrackItemBreak(int animId, int layer);  // below, DrinkSlowWalk section
+static void TrackPlayerMainAnim(int animId, int layer);  // above InputDetour, free stamina
 
 // Diagnostyka: kazda para (animacja, warstwa) logowana przy pierwszym uzyciu - do mapowania animacji
 // ruchu (chod/bieg/sprint), ktore w DSR nie maja root motion i nie da sie ich rozpoznac z danych.
@@ -863,7 +940,7 @@ static void* __fastcall PlayAnimDetour(void* ctx, void* out, int a3, int a4, cha
     if (kDiag && a4 == 7 && a3 >= 200000 && a3 < 500000 && a3 % 10000 >= 3000 && a3 % 10000 < 6000)
         Log("[%7lu ms] ATAK %d", GetTickCount() - g_t0, a3);
     TrackDrink(a3, a4);
-    if (ctx == g_playerAnimCtx || ctx == g_rollCtx) TrackItemBreak(a3, a4);
+    if (ctx == g_playerAnimCtx || ctx == g_rollCtx) { TrackItemBreak(a3, a4); TrackPlayerMainAnim(a3, a4); }
     DWORD sinceJump = g_lastJumpInject ? GetTickCount() - g_lastJumpInject : ~0ul;
     bool afterJump = sinceJump < 400;
     if (a3 == -1 && ctx == g_jumpAnimCtx) g_jumpEnded = true;
