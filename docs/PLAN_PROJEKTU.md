@@ -243,6 +243,35 @@ Modularna architektura moda (Gracz / Bossowie): Rozdzielić zawartość moda na 
 
 ## 5a. Artorias (c4100) — AKTYWNA PRACA (2026-11-13)
 
+### STAN NA KONIEC SESJI 2026-11-13 (po południu) — czytać najpierw
+
+**Repo:** `main` = `origin/main` = `d3273b6` (przetestowane: prostowanie doskoków v2, blokady obrotu JT7 z NR, sonda ataków wroga, `.claude\` usunięty z repo). Gałąź robocza `artorias-work` = `origin/artorias-work` = commit z tym wpisem; jest przed `main` o zmiany z listy niżej. Scalać do `main` fast-forwardem dopiero po teście gracza. Drzewo robocze czyste.
+
+**Co jest w `dist\` teraz (build dev `ER_DIAG=1`, paczka `dist\mods\bossy_nightreign\launch_nr_artorias_v2.bat`):**
+
+| Zmiana | Stan |
+|---|---|
+| Artorias: prostowanie przez rzut na kierunek netto, JT7 z NR | przetestowane, „bardzo dobrze", w `main` |
+| DLL: sonda ataków wroga (`enemy … dist / bearing / hp`), raport `python tools\enemy_probe_report.py [--detail 3017 3018 3019]` | działa, w `main` |
+| DLL: trafienie przerywa animację przedmiotu na górnej części ciała (`[Items] HitCancelsItem=1`) | zadziałało 2 razy w logu, gracz bez uwag; tylko `artorias-work` |
+| DLL: przewrót z kolejki dostaje kierunek (`kOmniQueuedMaxMs` 4500 ms) | potwierdzone przez gracza; tylko `artorias-work` |
+| DLL: przewrót przy puszczeniu dla każdego wciśnięcia z kierunkiem przy namierzeniu (gałka po przekątnej przód–bok) | **NIE testowane** |
+| Artorias 3019: okno trafienia wypadu od 2,00 s (`--hit-start 3019:2.13:2.0`) | **NIE testowane** |
+| DLL: sonda zawieszenia (`HANG probe`, tylko odczyt) | działa, daje fałszywe alarmy 0,6–0,9 s |
+
+**Do zrobienia (kolejność):**
+1. **Test gracza dwóch nietestowanych zmian:** 3019 z bliska (czy wypad trafia i czy nie za łatwo — wartość 2,00 s to odejście od NR, pośrednia np. 2,07 s) oraz szybkie kliknięcia przewrotu po przekątnej przód–bok przy namierzeniu. Po akceptacji: `git push origin artorias-work:main` (fast-forward) i migawka całości (`work\V14_…`: `files\`, `bin\`, `native\`, `tools\`, `files_c4100_v2\`).
+2. **Zawieszenie (przyczyna NIEUSTALONA, najważniejszy otwarty błąd gracza):** stan bez animacji na warstwie 7, pozycja i prędkość stałe, na ziemi, mimo wychylonej gałki; kończy je trafienie. Złapane raz (wpis „Zawieszenie złapane w logu" niżej). Po następnym wystąpieniu: F8, w logu `HANG probe: frozen …` z `hit anim L11 -1` i czasem dużo dłuższym niż 1 s; porównać listę `hang diff` z kilku zdarzeń (kandydat: zgody akcji `ActionCtrl+0x1A0..0x1B7` = `PlayerCtrl+0x520..0x537`). Dopiero potem poprawka. Ewentualnie podnieść `kHangAfterMs` (600) do ok. 1200, żeby odciąć fałszywe alarmy.
+3. **Artorias, drobne:** szarża 3027 (14 m, nieskalowana) przelatuje 5–10 m za gracza — kandydat do `--rm-scale 1003027:…`; 3026 nadal wyłączony (`USE_3026 = False`); akcji 14 z bliska NIE blokować (decyzja gracza).
+4. **Przy następnym wydaniu:** dopisać `[Items] HitCancelsItem` do `README_release.md`; wydanie musi iść z `/DER_DIAG=0` (sondy i tak są tylko w `ER_DIAG=1`). Gracz prosił, żeby po stabilnym stanie proponować kolejne wydanie (zasada 10) — po teście z pkt 1 zaproponować v1.2 (V12 + V13 + poprawki przewrotu i estusa; Artorias jest osobną paczką testową, nie częścią wydania).
+5. **Odłożone wcześniej, bez zmian:** blok tarczą w sprincie, ślizganie po lądowaniu i przeskok rąk 900 → 1550 (§5 pkt 4–5), ataki z wyskoku wstrzymane na v2.9 (§4), wykrywanie walki po celu AI dla darmowego sprintu.
+
+**Punkty powrotu z tej sesji (`work\`):** `ARTORIAS_V2_STRAIGHT1\` (pierwsze prostowanie), `ARTORIAS_V2_STRAIGHT2\` (prostowanie v2, przed JT7), `ARTORIAS_V2_TURNLOCK\` (JT7 z NR, przed `--hit-start` — stan z `main`), `DLL_PROBE_2026-11-13\` (DLL z samą sondą wroga), `DLL_ITEMHIT_2026-11-13\` (+ `HitCancelsItem`), `DLL_QUEUEDROLL_2026-11-13\` (+ przewrót z kolejki i sonda zawieszenia). DLL bez żadnych zmian z tej sesji: `V13_STAMINA\bin\`.
+
+**Czytanie logu — nowe ustalenia:** ostatnia sesja = od ostatniego `pierwsza klatka gry`; F8 zrzuca bufor (6000 linii, przy sondach zapełnia się w kilkadziesiąt sekund walki). Boss i gracz mają różne `ctx`; w walce z Artoriasem drugi `ctx` gra własne 3011 (filtrować po ctx bossa — raport robi to sam). `g_axis[0]` dodatnie = przód, `g_axis[1]` dodatnie = prawo. `namierzenie=0` w `unik-stan` = namierzony. Reakcje na trafienie gracza idą na warstwy 11 / 26 (2000–2099; 2026 = powalenie 4,1 s, unik od 3,0 s), przedmioty na 6 / 18. U wrogów JT7 też blokuje obrót. `TAE` typ 1 = zdarzenie trafienia (int w +8 = zachowanie ataku), 224 = `SetTurnSpeed`.
+
+Szczegóły i dowody każdego punktu — wpisy niżej (chronologicznie).
+
 **Cel gracza:** Artorias ma być szczytowym bossem przeróbki — szybszy i trudniejszy do unikania, dopasowany do nowego ruchu gracza; mniej doskoków niż w Nightreign, bo arena jest zamknięta.
 
 **Ustalenia (dane, nie test):**
