@@ -387,6 +387,16 @@ static void LockOnSprintPostInput(BYTE* ctx, float dt, void* p3) {
             g_lockRollDeferred = true;
         }
     }
+    // Forward-ish press: the game raises nothing at key down and waits for the release, where it rolls only
+    // if the stick still reads "forward". A stick that crosses the diagonal during the tap falls between
+    // the two vanilla paths and the roll is lost (log 2026-11-13: axes 0.65 -0.59 at key down, 0.67 -0.74
+    // at release, twice in a row, full stamina). Any press with a direction held is therefore tracked here
+    // and rolled on release if the game does not do it itself.
+    if (!g_lockRollDeferred && g_keyEdgeDown[g_rollKey] && IsLockedOnRollable(ctx, p3) &&
+        sqrtf(g_axis[0] * g_axis[0] + g_axis[1] * g_axis[1]) >= 0.3f) {
+        g_lockRollDeferred = true;
+        Log("[%7lu ms] lock-on sprint: key down with a direction, no roll raised - roll on release", now - g_t0);
+    }
     if (!g_lockRollDeferred) return;
     DWORD held = now - g_keyDownAt[g_rollKey];
     DWORD limit = SprintHoldThresholdMs();

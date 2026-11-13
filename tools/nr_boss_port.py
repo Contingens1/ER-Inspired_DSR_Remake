@@ -356,6 +356,15 @@ def install(args, results: dict) -> None:
             if jt_of(ev) == int(j):
                 say(f"  {aid}: JT{j} {float(ev.StartTime):.2f} -> {float(start):.2f}")
                 ev.StartTime = float(start)
+    for spec in args.hit_start:  # ANIM:OLD:NEW - move the start of the hit window that now starts at OLD
+        aid, old, start = spec.split(":")
+        a = next(a for a in tae.Animations if int(a.ID) == int(aid))
+        hit = [ev for ev in a.Events if int(ev.Type) in atk1 and abs(float(ev.StartTime) - float(old)) < 0.02]
+        if not hit or any(float(ev.EndTime) <= float(start) for ev in hit):
+            raise RuntimeError(f"--hit-start {spec}: no hit window starting at {old} that ends after {start}")
+        for ev in hit:
+            ev.StartTime = float(start)
+        say(f"  {aid}: hit window {float(old):.2f} -> starts at {float(start):.2f} ({len(hit)} event(s))")
     tentry.Bytes = to_memory(tae.Write())
     dst = (ROOT / "dist" / "mods" / "bossy_nightreign" / f"files_{args.dsr}{args.tag}" / "chr"
            / f"{args.dsr}.anibnd.dcx")
@@ -382,6 +391,9 @@ def main(argv=None) -> int:
     ap.add_argument("--extra-hits", action="store_true", help="install: damage for unpaired NR hit windows")
     ap.add_argument("--jt", action="append", default=[], metavar="ANIM:JT:START",
                     help="install: move a JumpTable window of an untouched DSR animation")
+    ap.add_argument("--hit-start", action="append", default=[], metavar="ANIM:OLD:NEW",
+                    help="install: new start time of the hit window that starts at OLD in an installed animation (a lunge "
+                         "shortened with --rm-scale reaches a close target before the NR hit window opens)")
     ap.add_argument("--rm-scale", action="append", default=[], metavar="NR:FACTOR",
                     help="port: scale the root-motion translation of one NR clip (closed arenas)")
     ap.add_argument("--rm-straighten", type=int, nargs="*", default=[], metavar="NR",
