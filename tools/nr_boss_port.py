@@ -134,6 +134,16 @@ def port_one(ctx, nr_id: int, dsr_id: int, out: Path) -> dict:
         # --rm-scale: NR stretches the lunges toward the target at run time (TAE 760); DSR cannot, so a
         # clip made for a huge arena can be shortened here (translation only, yaw untouched).
         erm[:, :3] *= S * ctx["rm_scale"].get(nr_id, 1.0)
+        if nr_id in ctx["rm_straighten"]:
+            # NR lunges travel diagonally and are aimed at run time; DS1 aims its own leaps (3003, 3009)
+            # only by turning the character while the clip moves straight ahead. Fold every step of the
+            # path onto the forward axis (-Z) so the engine's SetTurnSpeed windows do the aiming.
+            d_xz = np.diff(erm[:, [0, 2]], axis=0)
+            step_len = np.hypot(d_xz[:, 0], d_xz[:, 1])
+            back = (d_xz[:, 1] > 0) & (np.abs(d_xz[:, 1]) > np.abs(d_xz[:, 0]))  # real steps backwards stay
+            fwd = np.where(back, d_xz[:, 1], -step_len)
+            erm[1:, 2] = erm[0, 2] + np.cumsum(fwd)
+            erm[:, 0] = erm[0, 0]
     has_drm = bool(dc.hkx_animation.extractedMotion)
     drm_end = dc.get_reference_frame_samples()[-1] if has_drm else np.zeros(4)
     if erm is not None and not has_drm and float(np.abs(erm).max()) < 1e-3:
@@ -353,6 +363,8 @@ def main(argv=None) -> int:
                     help="install: move a JumpTable window of an untouched DSR animation")
     ap.add_argument("--rm-scale", action="append", default=[], metavar="NR:FACTOR",
                     help="port: scale the root-motion translation of one NR clip (closed arenas)")
+    ap.add_argument("--rm-straighten", type=int, nargs="*", default=[], metavar="NR",
+                    help="port: fold the root-motion path of these NR clips onto the forward axis")
     ap.add_argument("--reuse", action="store_true", help="keep already ported HKX, redo only the install")
     ap.add_argument("--tag", default="", help="suffix of the files_<dsr> folder and of the report (variants)")
     args = ap.parse_args(argv)
@@ -420,7 +432,8 @@ def main(argv=None) -> int:
     ctx = dict(d=d, e=e, TRS=TRSTransform, V3=Vector3, Qt=Quaternion, dnames=dnames, dpar=dpar, epar=epar,
                d2e=d2e, e2d=e2d, S=S, dref=dref, dPr=dPr, dRr=dRr, eref=eref, ePr=ePr, eRr=eRr, DD=DD, ED=ED,
                comp_for=comp_for, pelvis=pelvis, master_carries=master_carries,
-               rm_scale={int(s.split(":")[0]): float(s.split(":")[1]) for s in args.rm_scale})
+               rm_scale={int(s.split(":")[0]): float(s.split(":")[1]) for s in args.rm_scale},
+               rm_straighten=set(args.rm_straighten))
     say()
     say(f"{'DSR':>5} {'NR':>6} {'DSR s':>6} {'NR s':>6}  {'root motion end DSR -> NR*S (x,y,z)':52s} {'B':>8} drift")
     results = {}
