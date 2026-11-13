@@ -17,3 +17,4 @@ work/
 dist/
 analysis/
 gemini/
+.claude/
