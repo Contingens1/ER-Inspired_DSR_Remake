@@ -80,12 +80,17 @@ def main(argv=None) -> int:
         dcx_type = "?"
         dump = cid in args.unpack
         out = ROOT / "work" / "boss_port" / f"nr_{cid}" / "anibnd"
+        sources: dict[str, str] = {}  # hkx name -> compendium of the same binder (divided anibnds have one each)
         try:
             for p in sorted(NR_CHR.glob(f"{cid}*.anibnd.dcx")):
                 head = p.read_bytes()[:0x30]
                 dcx_type = head[0x28:0x2C].decode("ascii", "replace")
-                for name, f in entries(sf, sf.BND4, p):
+                ents = entries(sf, sf.BND4, p)
+                comp_name = next((n for n, _ in ents if n.lower().endswith(".compendium")), "")
+                for name, f in ents:
                     low = name.lower()
+                    if low.endswith(".hkx"):
+                        sources[name] = comp_name
                     data = None
                     if low.endswith(".hkx") and "skeleton" not in low:
                         n_hkx += 1
@@ -107,6 +112,8 @@ def main(argv=None) -> int:
                          for s, n, k in scores[:2])
         emit(f"{cid:6} {ok:3} {n_hkx:5d} {n_tae:4d} {len(skel):5d}  {dcx_type} / {best}")
         if dump:
+            import json
+            (out / "compendium_map.json").write_text(json.dumps(sources, indent=0), encoding="utf-8")
             (out.parent / f"{cid}_skeleton_strings.txt").write_text("\n".join(skel), encoding="utf-8")
     (ROOT / "analysis").mkdir(exist_ok=True)
     (ROOT / "analysis" / "nr_inventory.txt").write_text("\n".join(lines), encoding="utf-8")
