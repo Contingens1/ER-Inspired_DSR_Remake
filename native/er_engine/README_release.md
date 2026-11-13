@@ -59,7 +59,8 @@ Jeśli przeniesiesz folder Mod Engine 2 w inne miejsce, uruchom `Setup.bat` jesz
 `bin\er_engine.ini`:
 - `OmniRoll=1` — przewrót we wszystkie strony przy namierzeniu (`0` = 4 kierunki jak w DSR),
 - `RollBuffer=1` — bufor klawisza uniku (`0` = wyłączony),
-- `LockOnSprint=1` — przy namierzeniu przewrót przy puszczeniu klawisza (`0` = jak w DSR: przewrót w bok i w tył od razu przy wciśnięciu).
+- `LockOnSprint=1` — przy namierzeniu przewrót przy puszczeniu klawisza (`0` = jak w DSR: przewrót w bok i w tył od razu przy wciśnięciu),
+- `FreeOutOfCombat=1` (sekcja `[Stamina]`) — poza walką sprint nie zużywa wytrzymałości; przewroty, skoki i ataki kosztują zawsze (`0` = jak w DSR). „Walka" = namierzony cel, utrata HP w ostatnich 8 s albo atak bronią w ostatnich 5 s.
 
 ## Znane ograniczenia
 

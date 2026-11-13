@@ -57,12 +57,12 @@ function Artorius410000_Act14(ai, goal, paramTbl)
     if AppDist <= targetDist then
         Approach_Act(ai, goal, AppDist, DashDist, 0, 3)
     end
-    goal:AddSubGoal(GOAL_COMMON_ComboAttackTunableSpin, 10, 3017, TARGET_ENE_0, 12, 0, 90)
+    goal:AddSubGoal(GOAL_COMMON_CommonAttack, 10, 3017, TARGET_ENE_0, 999, 180, 0, 90, true, true, false, false, 0, 0)
     if fate <= 70 then
-        goal:AddSubGoal(GOAL_COMMON_ComboRepeat, 10, 3018, TARGET_ENE_0, 12, 0)
-        goal:AddSubGoal(GOAL_COMMON_ComboFinal, 10, 3019, TARGET_ENE_0, 14, 0)
+        goal:AddSubGoal(GOAL_COMMON_ComboRepeat_SuccessAngle180, 10, 3018, TARGET_ENE_0, 999, 0, 0)
+        goal:AddSubGoal(GOAL_COMMON_ComboFinal, 10, 3019, TARGET_ENE_0, 999, 0)
     else
-        goal:AddSubGoal(GOAL_COMMON_ComboFinal, 10, 3018, TARGET_ENE_0, 12, 0)
+        goal:AddSubGoal(GOAL_COMMON_ComboFinal, 10, 3018, TARGET_ENE_0, 999, 0)
     end
     GetWellSpace_Odds = Artorius410000_Odds(ai, 60, 20)
     return GetWellSpace_Odds
@@ -70,7 +70,10 @@ end
 
 '''
 
-PHASE2_WEIGHTS = f'''    if hprate <= {PHASE2} and actPerArr[7] == 0 and actPerArr[10] == 0 and actPerArr[11] == 0 and actPerArr[12] == 0 and actPerArr[20] == 0 then
+PHASE2_WEIGHTS = f'''    if targetDist < 3 and actPerArr[7] == 0 and actPerArr[10] == 0 and actPerArr[11] == 0 and actPerArr[12] == 0 and actPerArr[20] == 0 then
+        actPerArr[15] = 15
+    end
+    if hprate <= {PHASE2} and actPerArr[7] == 0 and actPerArr[10] == 0 and actPerArr[11] == 0 and actPerArr[12] == 0 and actPerArr[20] == 0 then
         if ai:IsFinishTimer(3) == true then
             if 9 <= targetDist then
                 actPerArr[14] = 0
@@ -105,13 +108,16 @@ def main() -> int:
     # Common_Clear_Param zeroes the arrays it knows about; make sure the slots tested below exist.
     t = sub_once(t, "    ai:SetNumber(0, 0)\n    local hprate = ai:GetHpRate(TARGET_SELF)\n",
                  "    ai:SetNumber(0, 0)\n    actPerArr[7] = 0\n    actPerArr[8] = 0\n    actPerArr[10] = 0\n"
-                 "    actPerArr[11] = 0\n    actPerArr[12] = 0\n    actPerArr[14] = 0\n    actPerArr[20] = 0\n"
+                 "    actPerArr[11] = 0\n    actPerArr[12] = 0\n    actPerArr[14] = 0\n    actPerArr[15] = 0\n    actPerArr[20] = 0\n"
                  "    local hprate = ai:GetHpRate(TARGET_SELF)\n")
     t = sub_once(t, "    actFuncArr[1] = REGIST_FUNC(ai, goal, Artorius410000_Act01)\n",
                  PHASE2_WEIGHTS + "    actFuncArr[1] = REGIST_FUNC(ai, goal, Artorius410000_Act01)\n")
     t = sub_once(t, "    actFuncArr[13] = REGIST_FUNC(ai, goal, Artorius410000_Act13)\n",
                  "    actFuncArr[13] = REGIST_FUNC(ai, goal, Artorius410000_Act13)\n"
-                 "    actFuncArr[14] = REGIST_FUNC(ai, goal, Artorius410000_Act14)\n")
+                 "    actFuncArr[14] = REGIST_FUNC(ai, goal, Artorius410000_Act14)\n"
+                 # Act15 = Act10 (leap-back slash 3008) offered also when the player stands in front, close
+                 # (the original only uses it when the player is behind); the player liked this move.
+                 "    actFuncArr[15] = REGIST_FUNC(ai, goal, Artorius410000_Act10)\n")
 
     # Act03: 3004 -> 3024 (NR 3033)
     t = sub_once(t, "    goal:AddSubGoal(GOAL_COMMON_Attack, 10, 3004, TARGET_ENE_0, AttDist, 0)\n",
@@ -138,8 +144,8 @@ def main() -> int:
                  "        elseif Distmax < targetDist then\n"
                  "            Approach_Act(ai, goal, AppDist, DashDist, Odds_Guard, 3)\n"
                  "        end\n"
-                 "        goal:AddSubGoal(GOAL_COMMON_ComboAttackTunableSpin, 10, 3027, TARGET_ENE_0, AttDist, 0, 90)\n"
-                 "        goal:AddSubGoal(GOAL_COMMON_ComboFinal, 10, 3028, TARGET_ENE_0, 12, 0)\n"
+                 "        goal:AddSubGoal(GOAL_COMMON_CommonAttack, 10, 3027, TARGET_ENE_0, 999, 180, 0, 90, true, true, false, false, 0, 0)\n"
+                 "        goal:AddSubGoal(GOAL_COMMON_ComboFinal, 10, 3028, TARGET_ENE_0, 999, 0)\n"
                  "        GetWellSpace_Odds = Artorius410000_Odds(ai, 100, 30)\n"
                  "        return GetWellSpace_Odds\n"
                  "    end\n"
@@ -148,11 +154,11 @@ def main() -> int:
     t = sub_once(t, "    if fate <= 40 then\n        goal:AddSubGoal(GOAL_COMMON_AttackTunableSpin, 10, 3003, TARGET_ENE_0, AttDist, -1, 60)\n",
                  f"    if ai:GetHpRate(TARGET_SELF) <= {PHASE2} and ai:IsFinishTimer(3) == true and fate <= 40 then\n"
                  "        ai:SetTimer(3, 12)\n"
-                 "        goal:AddSubGoal(GOAL_COMMON_ComboAttackTunableSpin, 10, 3003, TARGET_ENE_0, AttDist, -1, 60)\n"
+                 "        goal:AddSubGoal(GOAL_COMMON_CommonAttack, 10, 3003, TARGET_ENE_0, 999, 180, 1.5, 60, true, true, false, false, 0, 0)\n"
                  "        if fate <= 20 then\n"
-                 "            goal:AddSubGoal(GOAL_COMMON_ComboRepeat, 10, 3009, TARGET_ENE_0, AttDist, 0)\n"
+                 "            goal:AddSubGoal(GOAL_COMMON_ComboRepeat_SuccessAngle180, 10, 3009, TARGET_ENE_0, 999, 0, 0)\n"
                  "        end\n"
-                 "        goal:AddSubGoal(GOAL_COMMON_ComboFinal, 10, 3026, TARGET_ENE_0, 14, 0)\n"
+                 "        goal:AddSubGoal(GOAL_COMMON_ComboFinal, 10, 3026, TARGET_ENE_0, 999, 0)\n"
                  "        GetWellSpace_Odds = Artorius410000_Odds(ai, 80, 30)\n"
                  "        return GetWellSpace_Odds\n"
                  "    end\n"
