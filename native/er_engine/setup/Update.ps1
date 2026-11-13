@@ -9,7 +9,8 @@
 # Switch off: bin\er_engine.ini, section [Update], CheckForUpdates=0.
 # Command line:
 #   -Manual            also report "no update" and errors (window)
-#   -FromZip <zip> -Yes  install a local package without asking and without network (used by build_release.ps1)
+#   -Yes               no windows: answer "yes" to the prompt and print the messages (tests, automation)
+#   -FromZip <zip> -Yes  install a local package without network (used by build_release.ps1)
 param(
     [switch]$Manual,
     [string]$FromZip = '',
@@ -27,7 +28,7 @@ $Preserved = @('bin\er_engine.ini', 'bin\er_engine.log', 'setup\modengine2_path.
 $MirroredDirs = @('bin', 'files', 'setup')
 
 function Show-Box([string]$text, [string]$buttons = 'OK', [string]$icon = 'Information') {
-    if ($FromZip) { Write-Host $text; return 'Yes' }
+    if ($FromZip -or $Yes) { Write-Host $text; return 'Yes' }
     Add-Type -AssemblyName System.Windows.Forms
     $owner = New-Object System.Windows.Forms.Form
     $owner.TopMost = $true
