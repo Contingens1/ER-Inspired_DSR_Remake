@@ -6,9 +6,9 @@
 # section 6a) ships inside files\: its anibnd and map AI script are added, and its GameParam (= the main mod's
 # GameParam + the boss rows, built by tools\artorias_phase2.py) replaces the main one. The DLL turns the boss
 # logic on when files\chr\c4100.anibnd.dcx is present ([Bosses] ArtoriasPhase2=2).
-# Usage: powershell -ExecutionPolicy Bypass -File native\er_engine\build_release.ps1 [-Version 1.3] [-SkipInstallerTest]
+# Usage: powershell -ExecutionPolicy Bypass -File native\er_engine\build_release.ps1 [-Version 0.4.0] [-SkipInstallerTest]
 param(
-    [string]$Version = '1.3',
+    [string]$Version = '0.4.0',
     [string]$Repo = 'Contingens1/ER-Inspired_DSR_Remake',   # GitHub repo whose latest release setup\Update.ps1 checks
     [switch]$SkipInstallerTest
 )
