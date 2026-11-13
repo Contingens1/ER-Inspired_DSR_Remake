@@ -12,14 +12,14 @@
 
 ## Context discipline
 - Onboarding or checking project state: read `docs\PLAN_PROJEKTU.md` first. It is the single source of current state, offsets and the task list.
-- Do not read `docs\ARCHIV\` unless the user asks. It holds history only.
+- Do not read `docs\archive\` unless the user asks. It holds history only.
 - Do not read `docs\er_anim_a000.md` in full (72 KB). Use grep.
 - Do not dump raw Ghidra output, decompilation logs, `.dcx`/`.dll`/`.bin` files or whole directories (`work\`, `dist\`, `toolsy\`, `gemini\`) into context. Search with grep or targeted reads.
 
 ## Directory map (`C:\Users\nemos\workspace\ds1-elden-port\`)
 - `docs\PLAN_PROJEKTU.md` — current state, offsets, snapshots, task list. Keep it updated after each milestone.
 - `docs\` — specs, reference tables (`weapon_groups_dsr_er.md`), technical notes.
-- `docs\ARCHIV\` — archived notes and history. Read-only unless asked.
+- `docs\archive\` — archived notes and history. Read-only unless asked.
 - `analysis\` — reverse-engineering findings, decompilation notes, offset research.
 - `native\er_engine\` — C++ source of `er_engine.dll`.
   - `build.bat` — dev build (`/DER_DIAG=1` by default). The game must be closed or the DLL copy fails.
