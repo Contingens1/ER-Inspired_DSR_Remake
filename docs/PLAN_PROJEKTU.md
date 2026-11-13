@@ -46,7 +46,8 @@ Data: 2026-11-12 · **Aktualny stan w `dist\` i `native\` = wydanie v1.1** (miga
 ## 2. Pliki i migawki
 
 **Migawki z 2026-11-12 (foldery; każdy ma `files\` całe, `bin\` = DLL + ini, `native\` = źródła DLL, `tools\` = skrypty, config i launcher). Powrót = skopiować zawartość na miejsce (`files\`, `bin\` → `dist\mods\c0000_er_engine\`; `native\` → `native\er_engine\`; `tools\` → `tools\`):**
-- `work\V11_ROLLS\` — **aktualny stan = wydanie v1.1** (estus + sprint przy namierzeniu + przewroty);
+- `work\V12_ITEMS\` — **aktualny stan `dist\` i `native\` (2026-11-13), przetestowany przez gracza, jeszcze bez wydania:** v1.1 + cap przy ciągu łyków estusa (7586), wolny chód przy duszach / człowieczeństwie (7500 / 7501), tempo halabard (reguła „nigdy wcześniej niż ER" tylko dla a38). Szczegóły: `docs\RAPORT_NOC_2026-11-13.md`;
+- `work\V11_ROLLS\` — wydanie v1.1 (estus + sprint przy namierzeniu + przewroty);
 - `work\V10_LOCKSPRINT\` — przed zmianami przewrotów (estus + przewrót przy puszczeniu klawisza);
 - `work\V10_ESTUS_FIX\` — przed zmianą uniku przy namierzeniu (same poprawki estusa);
 - `work\V10_RELEASE\` — stan wydania v1.0 (v2.9 + integracja Gemini), przed poprawkami estusa.
@@ -227,7 +228,11 @@ Mnożniki obrażeń (Ataki z wyskoku): Zweryfikować różnice w zadawanych obra
 Przy powrocie do tematu Asylum Demona zająć się zmniejszeniem ilości kurzu w powietrzu.
 Kluczowa obserwacja przed kontunuacją projektu reworku bossów - oprócz awatara z ER są bossy w Nightreign które być może można na podobnej zasadzie sportować - np. Artorias - przeniesienie animacji i korekta AI na podstawie ERNR (gaping dragon, centipede, capra demon). 
 
-Do dodania jako nowa sekcja: Do rozważenia
+System łatwej aktualizacji (przy następnym release): Zaimplementować zautomatyzowany mechanizm aktualizacji, bazujący na skrypcie startowym odpytującym API GitHub-a. Mod przy każdym uruchomieniu automatycznie sprawdza dostępność nowej wersji, wyświetlając prompt z pytaniem o pobranie i instalację aktualizacji, co zapewni łatwy proces dla testerów oraz podstawę pod przyszłe publiczne wydanie.
+
+Do dodania jako nowa sekcja: Do rozważenia/ niższy priorytet
+
+Modularna architektura moda (Gracz / Bossowie): Rozdzielić zawartość moda na dwa niezależne, konfigurowalne moduły: Moduł gracza (Movement & Player Combat) oraz Moduł przeciwników (Boss Rework), pozwalające na uruchamianie każdego wariantu osobno lub razem w ramach jednego wydania. Zadanie obejmuje odizolowanie hooków w er_engine.dll za pomocą dedykowanych flag w er_engine.ini (z bezpiecznym powrotem do oryginalnych funkcji gry po wyłączeniu modułu), wydzielenie osobnych podfolderów w strukturze paczki (mods/core, mods/player, mods/bosses) oraz dodanie wyboru aktywnych modułów bezpośrednio w konfiguratorze Setup.ps1.
 
     Kolizje przy wybiciu: Zbadać i wdrożyć ignorowanie kolizji z teksturami/geometrią mapy w samym początku skoku (faza wybicia), aby zapobiec blokowaniu się i wytrącaniu postaci z pędu na drobnych nierównościach.
 
