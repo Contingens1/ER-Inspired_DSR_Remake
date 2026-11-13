@@ -136,13 +136,16 @@ def port_one(ctx, nr_id: int, dsr_id: int, out: Path) -> dict:
         erm[:, :3] *= S * ctx["rm_scale"].get(nr_id, 1.0)
         if nr_id in ctx["rm_straighten"]:
             # NR lunges travel diagonally and are aimed at run time; DS1 aims its own leaps (3003, 3009)
-            # only by turning the character while the clip moves straight ahead. Fold every step of the
-            # path onto the forward axis (-Z) so the engine's SetTurnSpeed windows do the aiming.
-            d_xz = np.diff(erm[:, [0, 2]], axis=0)
-            step_len = np.hypot(d_xz[:, 0], d_xz[:, 1])
-            back = (d_xz[:, 1] > 0) & (np.abs(d_xz[:, 1]) > np.abs(d_xz[:, 0]))  # real steps backwards stay
-            fwd = np.where(back, d_xz[:, 1], -step_len)
-            erm[1:, 2] = erm[0, 2] + np.cumsum(fwd)
+            # only by turning the character while the clip moves straight ahead. Project the path onto
+            # the clip's net travel direction and lay that out along forward (-Z), so the engine's
+            # SetTurnSpeed windows do the aiming. The first version summed the length of every step
+            # instead: side steps and the small recovery shuffles all became forward travel (3031: 7.9 m
+            # for a 5.5 m net move, 3030 kept walking ~1.5 m after its hit), which carried the boss past
+            # the player. The projection keeps the net distance and lets real steps back stay steps back.
+            p_xz = erm[:, [0, 2]] - erm[0, [0, 2]]
+            net = float(np.hypot(p_xz[-1, 0], p_xz[-1, 1]))
+            axis = p_xz[-1] / net if net > 0.5 else np.array([0.0, -1.0])
+            erm[:, 2] = erm[0, 2] - p_xz @ axis
             erm[:, 0] = erm[0, 0]
     has_drm = bool(dc.hkx_animation.extractedMotion)
     drm_end = dc.get_reference_frame_samples()[-1] if has_drm else np.zeros(4)

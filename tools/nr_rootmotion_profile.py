@@ -44,8 +44,16 @@ def main(nr: str, *ids: str) -> int:
         print(f"== {i}: clip {dur:.2f} s, root motion end x {rm[-1, 0]:.2f} z {rm[-1, 2]:.2f} yaw {np.degrees(rm[-1, 3]):.0f} deg")
         marks = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0, 6.0]
         print("   dist travelled by t: " + "  ".join(f"{m:.1f}s={np.hypot(*(at(m)[[0, 2]])):.1f}m" for m in marks if m <= dur))
+        # Path every 0.25 s: x (sideways), z (forward is -z), yaw, and the path length so far.
+        seg = np.hypot(np.diff(rm[:, 0]), np.diff(rm[:, 2]))
+        plen = np.concatenate([[0.0], np.cumsum(seg)])
+        for m in np.arange(0.0, dur + 1e-6, 0.25):
+            a = at(m)
+            print(f"   t {m:4.2f}  x {a[0]:7.2f}  z {a[2]:7.2f}  yaw {np.degrees(a[3]):7.1f}  path {np.interp(m, t, plen):6.2f}")
         for ev in tae[i].Events:
             p = bytes(ev.GetParameterBytes(False))
+            if int(ev.Type) == 224 and len(p) >= 4:
+                print(f"   turn {float(ev.StartTime):.2f}-{float(ev.EndTime):.2f}: {struct.unpack_from('<f', p, 0)[0]:.0f} deg/s")
             if int(ev.Type) == 760:
                 fl = struct.unpack_from("<5f", p, 4) if len(p) >= 24 else struct.unpack_from(f"<{(len(p) - 4) // 4}f", p, 4)
                 s0, s1 = float(ev.StartTime), float(ev.EndTime)
