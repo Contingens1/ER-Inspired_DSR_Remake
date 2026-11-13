@@ -64,6 +64,16 @@ def port_one(ctx, nr_id: int, dsr_id: int, out: Path) -> dict:
     eT, eQ = frames_to_arrays(eint.interleaved_data, list(ec.hkx_binding.transformTrackToBoneIndices),
                               len(epar), eref)
     F = eT.shape[0]
+    # Some NR clips are sampled at 60 fps (Artorias a001 3030 / 3033: 281 frames for 4.67 s). DSR plays
+    # 30 fps, so without this they ran at half speed and drifted away from their TAE events.
+    nr_dur = float(ec.hkx_animation.duration)
+    step = max(1, int(round((F - 1) / max(nr_dur * 30.0, 1.0))))
+    keep = None
+    if step > 1:
+        keep = list(range(0, F, step))
+        if keep[-1] != F - 1:
+            keep.append(F - 1)
+        eT, eQ, F = eT[keep], eQ[keep], len(keep)
     eP, eRot = to_model_space(epar, eT, eQ)
     B = len(dnames)
     P, T, Q = np.zeros((F, B, 3)), np.zeros((F, B, 3)), np.zeros((F, B, 4))
@@ -117,7 +127,13 @@ def port_one(ctx, nr_id: int, dsr_id: int, out: Path) -> dict:
 
     erm = ec.get_reference_frame_samples().astype(np.float64).copy() if ec.hkx_animation.extractedMotion else None
     if erm is not None:
-        erm[:, :3] *= S
+        if keep is not None:  # same resampling as the pose frames
+            src_t = np.linspace(0.0, 1.0, erm.shape[0])
+            dst_t = np.linspace(0.0, 1.0, F)
+            erm = np.stack([np.interp(dst_t, src_t, erm[:, k]) for k in range(erm.shape[1])], axis=1)
+        # --rm-scale: NR stretches the lunges toward the target at run time (TAE 760); DSR cannot, so a
+        # clip made for a huge arena can be shortened here (translation only, yaw untouched).
+        erm[:, :3] *= S * ctx["rm_scale"].get(nr_id, 1.0)
     has_drm = bool(dc.hkx_animation.extractedMotion)
     drm_end = dc.get_reference_frame_samples()[-1] if has_drm else np.zeros(4)
     if erm is not None and not has_drm and float(np.abs(erm).max()) < 1e-3:
@@ -135,7 +151,7 @@ def port_one(ctx, nr_id: int, dsr_id: int, out: Path) -> dict:
     oP, _ = to_model_space(dpar, oT, oQ)
     idx = np.clip(np.round(np.linspace(0, oP.shape[0] - 1, F)).astype(int), 0, oP.shape[0] - 1)
     diff = float(np.linalg.norm(P - oP[idx], axis=2).mean())
-    return {"diff": diff,"nr_dur": (F - 1) / 30.0, "dsr_dur": float(dc.hkx_animation.duration),
+    return {"diff": diff, "nr_dur": nr_dur, "dsr_dur": float(dc.hkx_animation.duration),
             "nr_rm": None if erm is None else erm[-1], "dsr_rm": drm_end if has_drm else None,
             "size": out.stat().st_size, "drift": float(drift)}
 
@@ -335,6 +351,8 @@ def main(argv=None) -> int:
     ap.add_argument("--extra-hits", action="store_true", help="install: damage for unpaired NR hit windows")
     ap.add_argument("--jt", action="append", default=[], metavar="ANIM:JT:START",
                     help="install: move a JumpTable window of an untouched DSR animation")
+    ap.add_argument("--rm-scale", action="append", default=[], metavar="NR:FACTOR",
+                    help="port: scale the root-motion translation of one NR clip (closed arenas)")
     ap.add_argument("--reuse", action="store_true", help="keep already ported HKX, redo only the install")
     ap.add_argument("--tag", default="", help="suffix of the files_<dsr> folder and of the report (variants)")
     args = ap.parse_args(argv)
@@ -401,7 +419,8 @@ def main(argv=None) -> int:
 
     ctx = dict(d=d, e=e, TRS=TRSTransform, V3=Vector3, Qt=Quaternion, dnames=dnames, dpar=dpar, epar=epar,
                d2e=d2e, e2d=e2d, S=S, dref=dref, dPr=dPr, dRr=dRr, eref=eref, ePr=ePr, eRr=eRr, DD=DD, ED=ED,
-               comp_for=comp_for, pelvis=pelvis, master_carries=master_carries)
+               comp_for=comp_for, pelvis=pelvis, master_carries=master_carries,
+               rm_scale={int(s.split(":")[0]): float(s.split(":")[1]) for s in args.rm_scale})
     say()
     say(f"{'DSR':>5} {'NR':>6} {'DSR s':>6} {'NR s':>6}  {'root motion end DSR -> NR*S (x,y,z)':52s} {'B':>8} drift")
     results = {}

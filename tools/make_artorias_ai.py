@@ -29,7 +29,10 @@ ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "work" / "boss_ai" / "dsr_m12_01" / "410000_battle.lua"
 OUT_LUA = ROOT / "work" / "boss_ai" / "410000_battle.nr_v2.lua"
 OUT_BND = ROOT / "dist" / "mods" / "bossy_nightreign" / "files_c4100_v2" / "script" / "m12_01_00_00.luabnd.dcx"
-PHASE2 = "0.65"
+# 2026-11-13, player's decision: no phase switch - the extra moves are available for the whole fight
+# (a buff-triggered phase would be skipped by anyone who interrupts the buff). 0.65 = NR threshold.
+PHASE2 = "1.0"
+USE_3026 = False
 
 
 def sub_once(text: str, old: str, new: str) -> str:
@@ -150,8 +153,10 @@ def main() -> int:
                  "        return GetWellSpace_Odds\n"
                  "    end\n"
                  "    if Distmin <= targetDist and targetDist <= Distmax then\n")
-    # Act08: 3003 -> [3009] -> 3026
-    t = sub_once(t, "    if fate <= 40 then\n        goal:AddSubGoal(GOAL_COMMON_AttackTunableSpin, 10, 3003, TARGET_ENE_0, AttDist, -1, 60)\n",
+    # Act08: 3003 -> [3009] -> 3026. Switched off 2026-11-13: 3026 repositions ~11 m sideways and then leaps
+    # back at the target with a run-time scaled jump (TAE 760, 2.5-15 m) that DSR cannot do, so it missed.
+    if USE_3026:
+      t = sub_once(t, "    if fate <= 40 then\n        goal:AddSubGoal(GOAL_COMMON_AttackTunableSpin, 10, 3003, TARGET_ENE_0, AttDist, -1, 60)\n",
                  f"    if ai:GetHpRate(TARGET_SELF) <= {PHASE2} and ai:IsFinishTimer(3) == true and fate <= 40 then\n"
                  "        ai:SetTimer(3, 12)\n"
                  "        goal:AddSubGoal(GOAL_COMMON_CommonAttack, 10, 3003, TARGET_ENE_0, 999, 180, 1.5, 60, true, true, false, false, 0, 0)\n"

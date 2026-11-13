@@ -9,10 +9,8 @@ VARIANTS = {
     "artorias_new": ("Artorias (c4100): 7 new Nightreign attacks (a001 set) placed on old attack slots "
                      "3000/3001/3004/3005/3007/3011/3014; original AI", ["files_c4100_nr_new"]),
     "artorias_v2": ("Artorias (c4100) v2: all original attacks kept, 8 Nightreign phase-2 attacks added as "
-                    "3017-3019 / 3024-3028, AI with phase 2 below 65 % HP (tools/make_artorias_ai.py)",
+                    "3017-3019 / 3024-3028, AI uses them for the whole fight (tools/make_artorias_ai.py)",
                     ["files_c4100_v2"]),
-    "artorias_v2_p2test": ("TEST: Artorias v2 with phase 2 active from the start of the fight (to see every "
-                           "new attack); not the intended balance", ["files_c4100_v2_p2test"]),
     "centipede": ("Centipede Demon (c5200): attacks 3000-3009 with Nightreign animations; original AI",
                   ["files_c5200"]),
     "gaping": ("Gaping Dragon (c5260): attacks 3000-3010 with Nightreign animations; original AI",
@@ -21,7 +19,7 @@ VARIANTS = {
 }
 
 # Variants that load a player DLL other than the main mod's (untested player changes ride along).
-PLAYER_DLL = {"artorias_v2_p2test": "../c0000_er_engine_stamina/bin/er_engine.dll"}
+PLAYER_DLL: dict[str, str] = {}
 
 for key, (desc, dirs) in VARIANTS.items():
     missing = [d for d in dirs if not (ROOT / d / "chr").is_dir()]
