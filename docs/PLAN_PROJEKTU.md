@@ -47,7 +47,7 @@ Stan na 2026-11-13. Skrócona wersja: tylko to, co jest aktualne. Pełna histori
 - Blok tarczą w sprincie wygląda nienaturalnie (animacja sprintu ER na górze ciała).
 - Sprint przy namierzeniu tylko w przód (jak vanilla).
 - Estus: broń widoczna w ręce przy piciu, mignięcie w marszu.
-- Darmowy sprint: wróg goniący, ale nienamierzony i bez trafienia, nie liczy się jako walka.
+- Darmowy sprint: wróg goniący, ale nienamierzony i bez trafienia, nie liczył się jako walka — poprawka przez stan AI wroga czeka na test (§2).
 - Pad (DualSenseX → X360) bywa ignorowany także bez ME2 i DLL — poza zakresem.
 
 ## 4. Pliki, build, migawki
@@ -67,7 +67,7 @@ Stan na 2026-11-13. Skrócona wersja: tylko to, co jest aktualne. Pełna histori
 4. **Skok — wygląd:** ślizganie po lądowaniu (wygaszać rozpęd albo dopasować animację); 900 → 1550 (podmiana na 906 na warstwach 8/24 w `PlayAnimDetour`); zwolnienie z półki (skrócić JT27 w 900 albo dosuwać pozycję).
 5. **Blok tarczą w sprincie:** najpierw sprawdzić vanilla; opcje: ignorować żądanie bloku w sprincie / blok przerywa sprint / osobna animacja górnej części ciała.
 6. **Sprint w bok i w tył przy namierzeniu** (większe; zgoda gracza, że warto): Ghidra — czytelnik `ctx+0x1E4` i warunek kierunku; co obraca postać do celu; hook.
-7. **Darmowy sprint:** wykrywanie walki po celu AI wrogów zamiast heurystyki.
+7. **Darmowy sprint — test stanu AI wrogów:** podejść do mobów bez namierzania; w logu `stamina: enemies in battle state …` ma rosnąć, gdy mob zauważy gracza, i spadać, gdy zgubi. Do ustalenia: czy liczyć też stan 2 („szukanie"), czy 40 m to dobry promień, czy liczba `enemies scanned` jest sensowna (0 = zły offset listy postaci).
 8. **Ataki z wyskoku** (wstrzymane): czas animacji lądowania wprost; 3800/3810; pętla spadania 31060; katana a029 na szkielet DSR; R2 w grupie 33, grupa 42.
 9. **Estus — chowanie broni (zaparkowane):** ER robi to eventem TAE 710 `HideEquippedWeapon`; DSR — w animacji (kość `R_Weapon`).
 10. **Do zbadania (pomysły gracza):** recovery po powaleniu DSR vs ER; mnożniki obrażeń ataków z wyskoku; ignorowanie kolizji w fazie wybicia skoku; dynamic poise (najniższy priorytet); modularny mod (gracz / bossowie osobno, przełączniki w ini i w `Setup.ps1`).
@@ -95,6 +95,8 @@ Cel: `DarkSoulsRemastered.exe`, SHA-256 `A45AAA36…`. Arxan szyfruje część k
 **Warstwy animacji gracza:** 7/23 całe ciało; 5/17 góra ciała (ESD slot 4); 8/24 spadanie; 6/18 przedmioty (picie 7585–7589, 7500, 7501); 11/26 reakcje na trafienie (2000–2099; 2026 = powalenie 4,1 s, unik od 3,0 s).
 
 **Obiekt gracza:** `PlayerIns` = `[base+0x1C77E50]`; `+0x68` → ChrMapData (`+0x48` z DSR-Gadget błędny); `ChrMapData+0x18` → AnimData, `+0xA8` prędkość animacji; `ChrMapData+0x28` → pozycja (`+0x04` yaw, `+0x10/14/18` XYZ; przód = `(-sin, -cos)`); `ChrMapData+0x104` bit `0x10` DisableMapHit. HP `PlayerIns+0x3E8`, wytrzymałość `chr+0x3F8`, flagi `chr+0x524` (bit `0x400` = bez zużycia wytrzymałości). Cel namierzenia `chr+0x1A0`; `p3+0x21D` = 1 ruch swobodny, 0 namierzenie. Właściciel ctx PlayAnim: `*(ctx+0x10)` → `+0x68` → `+0x28` (działa też dla wrogów).
+
+**Postacie i AI (Ghidra 2026-11-13, z bindingów Lua AI):** `WorldChrMan` = `[base+0x1C77E50]`: `+0x28` int liczba bloków mapy, `+0x30` bloki co `0xE8`; blok `+0x48` int liczba, `+0x50` wpisy co `0x38`, wpis `+0x00` = `ChrIns*` (`FUN_140371360`, `FUN_14033ec10`); drugi zbiór pod `+0x38`/`+0x40` (gracze). vtable `EnemyIns` = RVA `0x1322E68`, `PlayerIns` = `0x13251F0`. AI wroga: `*(chr+0x570)` (vtable +0xF8) → `+0x230` = obiekt AI → `+0x30` → `int +0xE0`: 0 spokój, 1 czujność (`IsCautionState`), 2 szukanie (`IsFindState`), 3 walka (`IsBattleState`). Cel AI: `FUN_1405c9070(ai, typ)` (typy <10 → `FUN_14061d860(ai+0x30, 0, typ)`). Skrypty: `native\ghidra_scripts\run_script.ps1 <Script.java> <args>` (`FindStringRefs`, `InspectAddrs`, `VtableOf`, `DecompileFuncs`).
 
 **Kontroler fizyki** (`ChrMapData+0x28`): `+0x32` na ziemi, `+0x33` zbocze, `+0x38` `hkpCharacterProxy*` (prędkość `proxy+0x60`), `+0x6D` zachowaj prędkość w powietrzu, `+0xD0` prędkość z poprzedniej klatki, `+0xF0` mnożnik XZ w spadaniu (0,98), `+0x144` prędkość obrotu, `+0x1B0/1B4` czas w powietrzu, `+0x1E4` skala grawitacji, `+0x1F0` swobodne spadanie, `+0x1F2/1F4` grawitacja wył., `+0x1F3` = 1 od wybicia do lądowania. Globalne: `0x141a2ae54` 6,0 m/s XZ, `0x141a2ae58` 1,0 (Y w górę), `0x141a2ae5c` 50 (Y w dół). Łańcuch: `FUN_140379880` → `FUN_1402bb020` → `FUN_1402bb150` → `FUN_1402bbe40` (root motion lub bezwładność + grawitacja → proxy).
 

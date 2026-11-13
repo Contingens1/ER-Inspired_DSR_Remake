@@ -13,6 +13,10 @@ public class DecompileFuncs extends GhidraScript {
         dec.openProgram(currentProgram);
         for (int i = 1; i < args.length; i++) {
             Function f = getFunctionContaining(toAddr(Long.parseUnsignedLong(args[i], 16)));
+            if (f == null) {   // not found by the analysis (e.g. reached only through a table): create it in memory
+                disassemble(toAddr(Long.parseUnsignedLong(args[i], 16)));
+                f = createFunction(toAddr(Long.parseUnsignedLong(args[i], 16)), null);
+            }
             if (f == null) { println("brak funkcji @ " + args[i]); continue; }
             DecompileResults r = dec.decompileFunction(f, 300, monitor);
             String c = r.decompileCompleted() ? r.getDecompiledFunction().getC() : "// blad: " + r.getErrorMessage();

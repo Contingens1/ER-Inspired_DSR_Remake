@@ -257,7 +257,6 @@ static void AirControlTick(float dt);   // nizej, sterowanie w locie
 static void AirControlOnPlayAnim(int anim, int layer);
 static void PhysProbeTick();            // nizej, sonda fizyki skoku (tylko odczyt)
 static void EnemyProbeTick();           // below: enemy attack probe (read-only, ER_DIAG)
-static void TargetProbeTick(void* p3);  // below: enemy target / aggro probe (read-only, ER_DIAG)
 static void HangProbeTick(const BYTE* ctx, void* p3);  // below: frozen-player probe (read-only, ER_DIAG)
 static void AirMomentumTick(float dt);  // nizej, rozped w spadaniu po skoku
 static void AirMomentumStart(int anim);
@@ -687,7 +686,8 @@ static void ForceEndPlayerAnim();  // nizej, przy CancelLandingRollIfIdle
 // ChrData1+0x514; +0x10 in this exe = chr+0x524 - the input handler tests NoMove 0x200 / NoAttack 0x100
 // at chr+0x525). The DLL sets it on the player while out of combat and only while sprinting; any
 // full-body animation (roll, jump, attack, cast, item) clears it, so those still cost stamina.
-// "In combat" is a heuristic (no enemy list yet): lock-on target, HP lost recently, or attacked recently.
+// "In combat": an enemy AI within 40 m in battle state (ScanEnemyAggro), lock-on target, HP lost recently,
+// or attacked recently.
 constexpr DWORD kCombatAfterHitMs = 8000;
 constexpr DWORD kCombatAfterAttackMs = 5000;
 static int g_mainAnim = -1;              // player's current layer-7 animation (-1 = none)
@@ -717,6 +717,78 @@ static void TrackPlayerMainAnim(int animId, int layer) {
     }
 }
 
+// --- Enemy aggro (AI battle state) -------------------------------------------------------------
+// From the Lua AI bindings (Ghidra, 2026-11-13): IsBattleState / IsFindState / IsCautionState read
+// *(int*)(*(ai + 0x30) + 0xE0) == 3 / 2 / 1 (0 = normal). The AI object of a character: EnemyIns vtable
+// slot 0xF8 returns *(chr + 0x570) (the AI manipulator), whose +0x230 is the AI (FUN_1405cb8c0).
+// Character list: WorldChrMan [base+0x1C77E50]: +0x28 int block count, +0x30 blocks (stride 0xE8);
+// block +0x48 int count, +0x50 entries (stride 0x38), entry +0x00 = ChrIns* (FUN_140371360, FUN_14033ec10).
+// Only EnemyIns (vtable RVA 0x1322E68) is read; HP at chr+0x3E8, position chr+0x68 -> +0x28 (+0x10/+0x18).
+constexpr ULONG_PTR kEnemyInsVtableRva = 0x1322E68;
+constexpr float kAggroMaxDist = 40.f;    // enemies in battle state farther than this are ignored
+constexpr int kAiBattleState = 3;
+
+struct AggroScan { int battle; float nearest; int find; int scanned; };
+
+static int AiStateOfEnemy(BYTE* chr, ULONG_PTR vtEnemy) {
+    if (*reinterpret_cast<ULONG_PTR*>(chr) != vtEnemy) return -1;
+    if (*reinterpret_cast<int*>(chr + 0x3E8) <= 0) return -1;   // dead
+    BYTE* man = *reinterpret_cast<BYTE**>(chr + 0x570);
+    if (reinterpret_cast<ULONG_PTR>(man) < 0x10000) return -1;
+    BYTE* ai = *reinterpret_cast<BYTE**>(man + 0x230);
+    if (reinterpret_cast<ULONG_PTR>(ai) < 0x10000) return -1;
+    BYTE* st = *reinterpret_cast<BYTE**>(ai + 0x30);
+    if (reinterpret_cast<ULONG_PTR>(st) < 0x10000) return -1;
+    int s = *reinterpret_cast<int*>(st + 0xE0);
+    return s >= 0 && s <= 3 ? s : -1;
+}
+
+static bool ScanEnemyAggro(AggroScan& out) {
+    out = {0, 1e9f, 0, 0};
+    BYTE* pl = ChrPosData();
+    if (!pl) return false;
+    __try {
+        auto base = reinterpret_cast<BYTE*>(GetModuleHandleA(nullptr));
+        ULONG_PTR vtEnemy = reinterpret_cast<ULONG_PTR>(base) + kEnemyInsVtableRva;
+        BYTE* w = *reinterpret_cast<BYTE**>(base + 0x1C77E50);
+        if (!w) return false;
+        float px = *reinterpret_cast<float*>(pl + 0x10), pz = *reinterpret_cast<float*>(pl + 0x18);
+        int blocks = *reinterpret_cast<int*>(w + 0x28);
+        BYTE* arr = *reinterpret_cast<BYTE**>(w + 0x30);
+        if (blocks <= 0 || blocks > 64 || reinterpret_cast<ULONG_PTR>(arr) < 0x10000) return false;
+        for (int b = 0; b < blocks; b++) {
+            BYTE* blk = arr + b * 0xE8;
+            int n = *reinterpret_cast<int*>(blk + 0x48);
+            BYTE* ent = *reinterpret_cast<BYTE**>(blk + 0x50);
+            if (n <= 0 || n > 2048 || reinterpret_cast<ULONG_PTR>(ent) < 0x10000) continue;
+            for (int i = 0; i < n; i++) {
+                BYTE* chr = *reinterpret_cast<BYTE**>(ent + i * 0x38);
+                if (reinterpret_cast<ULONG_PTR>(chr) < 0x10000) continue;
+                __try {
+                    int s = AiStateOfEnemy(chr, vtEnemy);
+                    if (s < 0) continue;
+                    out.scanned++;
+                    if (s < 2) continue;
+                    BYTE* pos = *reinterpret_cast<BYTE**>(*reinterpret_cast<BYTE**>(chr + 0x68) + 0x28);
+                    float dx = *reinterpret_cast<float*>(pos + 0x10) - px, dz = *reinterpret_cast<float*>(pos + 0x18) - pz;
+                    float d = sqrtf(dx * dx + dz * dz);
+                    if (!(d <= kAggroMaxDist)) continue;
+                    if (s == kAiBattleState) {
+                        out.battle++;
+                        if (d < out.nearest) out.nearest = d;
+                    } else {
+                        out.find++;
+                    }
+                } __except (EXCEPTION_EXECUTE_HANDLER) {
+                }
+            }
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    return true;
+}
+
 // Runs after the input handler: the flag is set only in frames where the sprint flag (+0x1E4) is on and
 // the handler raised no roll / backstep / jump request (+0x93..0x96, +0x8E, +0xAE) - those requests are
 // served later in the frame and must find the flag down.
@@ -736,7 +808,22 @@ static void FreeStaminaTick(const BYTE* ctx, void* p3) {
         bool locked = chr[0x1A0] != 0;
         bool hit = lastHpDropAt && now - lastHpDropAt < kCombatAfterHitMs;
         bool attacked = g_lastAttackAnimAt && now - g_lastAttackAnimAt < kCombatAfterAttackMs;
-        bool combat = locked || hit || attacked;
+        // Enemy AI in battle state near the player (scanned every 250 ms).
+        static DWORD scanAt = 0;
+        static AggroScan aggro = {0, 0.f, 0, 0};
+        static int lastBattle = -1, lastFind = -1;
+        if (g_freeStaminaOn && now - scanAt >= 250) {
+            scanAt = now;
+            if (!ScanEnemyAggro(aggro)) aggro = {0, 0.f, 0, 0};
+            if (aggro.battle != lastBattle || aggro.find != lastFind) {
+                Log("[%7lu ms] stamina: enemies in battle state %d (nearest %.1f m), searching %d, enemies scanned %d",
+                    now - g_t0, aggro.battle, aggro.battle ? aggro.nearest : 0.f, aggro.find, aggro.scanned);
+                lastBattle = aggro.battle;
+                lastFind = aggro.find;
+            }
+        }
+        bool aggroed = aggro.battle > 0;
+        bool combat = locked || hit || attacked || aggroed;
         bool sprinting = ctx[0x1E4] == 1;
         bool request = ctx[0x8E] || ctx[0x93] || ctx[0x94] || ctx[0x95] || ctx[0x96] || ctx[0xAE];
         bool want = g_freeStaminaOn && !combat && sprinting && !request && IsFreeStaminaAnim(g_mainAnim);
@@ -747,10 +834,10 @@ static void FreeStaminaTick(const BYTE* ctx, void* p3) {
             *flags &= ~0x400u;
             ours = nullptr;
         }
-        int state = !g_freeStaminaOn ? 0 : combat ? (locked ? 1 : hit ? 2 : 3) : 4;
+        int state = !g_freeStaminaOn ? 0 : combat ? (locked ? 1 : hit ? 2 : attacked ? 3 : 5) : 4;
         if (state != lastState) {
             static const char* kNames[] = {"off", "combat (lock-on)", "combat (HP lost)", "combat (attacked)",
-                                           "out of combat - sprint free"};
+                                           "out of combat - sprint free", "combat (enemy aggro)"};
             Log("[%7lu ms] stamina: %s (hp %d, stamina %d)", now - g_t0, kNames[state], hp,
                 *reinterpret_cast<int*>(chr + 0x3F8));
             lastState = state;
@@ -780,7 +867,7 @@ static void __fastcall InputDetour(void* ctx, float dt, void* p3) {
     AttackSpeedTick(dt);
     AirControlTick(dt);
     AirMomentumTick(dt);
-    if (kDiag) { PhysProbeTick(); EnemyProbeTick(); TargetProbeTick(p3); HangProbeTick(static_cast<const BYTE*>(ctx), p3); }
+    if (kDiag) { PhysProbeTick(); EnemyProbeTick(); HangProbeTick(static_cast<const BYTE*>(ctx), p3); }
     AirAttackTick(dt);
     if (kDiag) {  // F8 = znacznik w logu (podzial testu na kroki)
         static bool f8 = false;
@@ -1057,99 +1144,6 @@ static void EnemyProbeTick() {
     }
 }
 
-// --- Enemy target probe (ER_DIAG only, read-only) ----------------------------------------------
-// Free sprint should end when an enemy aggroes (as in Elden Ring), not only after the first hit. There is
-// no known "AI target" field. Hypothesis: enemies use the same ChrIns+0x1A0 the player uses for the lock-on
-// target. The probe registers every non-player character seen in PlayAnim (owner = *(ctx+0x10)) and logs:
-//  - changes of the enemy's +0x1A0 (qword) with the distance to the player ("target"),
-//  - when the player locks on: which registered enemy holds that value in its first 0x100 bytes (handle offset),
-//  - on an enemy's first attack (3000-3099, surely aggroed): dwords in +0x000..+0x5FF that went from zero to
-//    non-zero or back since the character was first seen (idle) - candidates if +0x1A0 is not it.
-struct TargetProbe { BYTE* chr; void* ctx; DWORD seenAt; ULONG64 target; bool attacked; DWORD idle[0x180]; };
-static TargetProbe g_targetProbe[48] = {};
-
-static void TargetProbeOnPlayAnim(void* ctx, int anim, int layer) {
-    if (!ctx || ctx == g_playerAnimCtx || ctx == g_rollCtx) return;
-    BYTE* chr = nullptr;
-    __try { chr = *reinterpret_cast<BYTE**>(static_cast<BYTE*>(ctx) + 0x10); } __except (EXCEPTION_EXECUTE_HANDLER) { return; }
-    if (reinterpret_cast<ULONG_PTR>(chr) < 0x10000) return;
-    DWORD now = GetTickCount();
-    TargetProbe* slot = nullptr;
-    for (auto& t : g_targetProbe) if (t.chr == chr) { slot = &t; break; }
-    if (!slot) {   // new character: take a free slot or the one not seen for the longest time
-        slot = &g_targetProbe[0];
-        for (auto& t : g_targetProbe) {
-            if (!t.chr) { slot = &t; break; }
-            if (now - t.seenAt > now - slot->seenAt) slot = &t;
-        }
-        slot->chr = chr; slot->ctx = ctx; slot->attacked = false; slot->target = 0;
-        __try {
-            memcpy(slot->idle, chr, sizeof(slot->idle));
-            slot->target = *reinterpret_cast<ULONG64*>(chr + 0x1A0);
-        } __except (EXCEPTION_EXECUTE_HANDLER) { slot->chr = nullptr; return; }
-        Log("[%7lu ms] target probe: new chr %p (ctx %p, first anim %d L%d), +0x1A0 = %llX", now - g_t0, chr, ctx, anim,
-            layer, slot->target);
-    }
-    slot->seenAt = now ? now : 1;
-    if (layer != 7 || anim < 3000 || anim > 3099 || slot->attacked) return;
-    slot->attacked = true;
-    int n = 0;
-    __try {
-        const DWORD* cur = reinterpret_cast<const DWORD*>(chr);
-        for (int i = 0; i < 0x180 && n < 40; i++) {
-            if ((slot->idle[i] == 0) == (cur[i] == 0)) continue;
-            Log("[%7lu ms] target probe: chr %p first attack %d, +0x%03X: idle %08lX -> %08lX", now - g_t0, chr, anim, i * 4,
-                slot->idle[i], cur[i]);
-            n++;
-        }
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-    }
-}
-
-static void TargetProbeTick(void* p3) {
-    static DWORD lastAt = 0;
-    static ULONG64 lastPlayerTarget = 0;
-    DWORD now = GetTickCount();
-    if (now - lastAt < 200) return;
-    lastAt = now;
-    BYTE* pl = ChrPosData();
-    __try {
-        BYTE* me = *reinterpret_cast<BYTE**>(static_cast<BYTE*>(p3) + 0x10);
-        if (reinterpret_cast<ULONG_PTR>(me) < 0x10000) return;
-        ULONG64 mine = *reinterpret_cast<ULONG64*>(me + 0x1A0);
-        if (mine != lastPlayerTarget) {
-            Log("[%7lu ms] target probe: player +0x1A0 %llX -> %llX (player chr %p)", now - g_t0, lastPlayerTarget, mine, me);
-            lastPlayerTarget = mine;
-            DWORD lo = static_cast<DWORD>(mine);
-            for (auto& t : g_targetProbe) {
-                if (!t.chr || !lo) continue;
-                const DWORD* d = reinterpret_cast<const DWORD*>(t.chr);
-                for (int i = 0; i < 0x40; i++)
-                    if (d[i] == lo) Log("[%7lu ms] target probe:   locked value found in chr %p at +0x%02X", now - g_t0, t.chr, i * 4);
-                if (reinterpret_cast<ULONG64>(t.chr) == mine) Log("[%7lu ms] target probe:   locked value = chr %p itself", now - g_t0, t.chr);
-            }
-        }
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return;
-    }
-    for (auto& t : g_targetProbe) {
-        if (!t.chr || now - t.seenAt > 120000) continue;
-        ULONG64 v;
-        __try { v = *reinterpret_cast<ULONG64*>(t.chr + 0x1A0); } __except (EXCEPTION_EXECUTE_HANDLER) { t.chr = nullptr; continue; }
-        if (v == t.target) continue;
-        float dist = -1.f;
-        BYTE* e = PosDataOfAnimCtx(t.ctx);
-        if (e && pl) __try {
-            float dx = *reinterpret_cast<float*>(pl + 0x10) - *reinterpret_cast<float*>(e + 0x10);
-            float dz = *reinterpret_cast<float*>(pl + 0x18) - *reinterpret_cast<float*>(e + 0x18);
-            dist = sqrtf(dx * dx + dz * dz);
-        } __except (EXCEPTION_EXECUTE_HANDLER) {
-        }
-        Log("[%7lu ms] target probe: chr %p +0x1A0 %llX -> %llX, dist %.1f m", now - g_t0, t.chr, t.target, v, dist);
-        t.target = v;
-    }
-}
-
 // A hit while drinking: the patched ESD plays the item animation on the upper body (layers 6 / 18) and the
 // game's damage reaction (2000-2099 on layers 11 / 26) does not end it - a knockdown then ran for 3 s with
 // the torso still held by the drink pose (log 2026-11-13: 2026 at 175.06 s, layer 6 released at 178.02 s).
@@ -1173,7 +1167,7 @@ static void ItemUpperOnPlayAnim(void* ctx, void* out, int anim, int layer, char 
 
 static void* __fastcall PlayAnimDetour(void* ctx, void* out, int a3, int a4, char a5, int a6, int a7) {
     if (kDiag && a3 >= 0) LogFirstUse(a3, a4);
-    if (kDiag) { EnemyProbeOnPlayAnim(ctx, a3, a4); TargetProbeOnPlayAnim(ctx, a3, a4); }
+    if (kDiag) { EnemyProbeOnPlayAnim(ctx, a3, a4); }
     ItemUpperOnPlayAnim(ctx, out, a3, a4, a5, a6);
     // Diagnostyka: kazde zlecenie na warstwie glownej (takze koniec animacji, a3 = -1), z ctx - gracz ma ten sam ctx co skok.
     if (kDiag && (a4 == 7 || a4 == 23))
