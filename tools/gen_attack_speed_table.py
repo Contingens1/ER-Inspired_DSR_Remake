@@ -29,6 +29,9 @@ SPEED_MIN, SPEED_MAX = 1.0, 2.0  # bez zwalniania animacji DSR (wyglada zle) - t
 SWING_MAX = 1.35
 # Ciezkie bronie: przyspieszony powrot widac (test: Dragon Tooth R2 x1.95) - nizszy limit koncowki
 HEAVY_GROUPS, HEAVY_RECOVERY_MAX = {32, 35}, 1.5
+# Groups where the "never ahead of ER" rule is applied (2026-11-13: halberds, reported as absurdly fast).
+# Other groups keep the speeds the player has already tested; the script lists what would change there.
+CUMULATIVE_GROUPS = {"a38"}
 
 
 def type_id(tpl, name):
@@ -64,6 +67,7 @@ def main() -> int:
     dsr = {ntpath.basename(f.Name).lower(): f for f in read_binder(BND3, str(DSR_SRC)).Files}
     er = {ntpath.basename(f.Name).lower(): f for f in read_binder(BND4, str(ER_ANI)).Files}
     rows = []
+    changed = []
     for g, pairs in mapping.items():
         if f"{g}.tae" not in dsr or f"{g}.tae" not in er:
             print(f"  {g}: brak TAE w DSR lub ER - pomijam")
@@ -79,10 +83,28 @@ def main() -> int:
                 continue
             speeds = [max(SPEED_MIN, min(SWING_MAX if i < 2 else (HEAVY_RECOVERY_MAX if gnum in HEAVY_GROUPS else SPEED_MAX), (kd[i + 1] - kd[i]) / max(1e-3, ke[i + 1] - ke[i])))
                       for i in range(3)]
+            # Never finish a segment earlier than ER does. Without this a DSR attack that hits much earlier
+            # than its ER counterpart (halberd running R1: hit at 0.07 s, ER 0.50 s) still got its recovery
+            # compressed to the ER segment length and ended at about half the ER time.
+            real, capped = 0.0, []
+            for i in range(3):
+                seg = kd[i + 1] - kd[i]
+                room = ke[i + 1] - real
+                s = speeds[i] if room <= 1e-3 else max(SPEED_MIN, min(speeds[i], seg / room))
+                capped.append(s)
+                real += seg / s
+            if capped != speeds:
+                changed.append((gnum, gnum * 10000 + d_id, speeds, capped))
+                if g in CUMULATIVE_GROUPS:
+                    speeds = capped
             full = gnum * 10000 + d_id
             rows.append((full, kd, speeds))
             print(f"  {full}: DSR {['%.2f' % x for x in kd]} -> ER {['%.2f' % x for x in ke]}  "
                   f"predkosci {['%.2f' % s for s in speeds]}")
+    print(f"'never ahead of ER' rule: {len(changed)} rows would change; applied to groups {sorted(CUMULATIVE_GROUPS)}")
+    for gnum, full, old, new in changed:
+        mark = "APPLIED" if f"a{gnum}" in CUMULATIVE_GROUPS else "not applied"
+        print(f"  cap {full}: {['%.2f' % s for s in old]} -> {['%.2f' % s for s in new]}  ({mark})")
     lines = ["// Wygenerowane przez tools/gen_attack_speed_table.py - nie edytowac recznie.",
              "// anim, punkty DSR (s): 0, trafienie start, trafienie koniec, okno ataku; predkosc odcinkow.",
              "#pragma once",

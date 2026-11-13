@@ -24,7 +24,8 @@ from sfbridge import load_soulsformats, read_binder, read_file, to_memory  # noq
 
 # 7588 (empty flask) and 7589 (shrug) added 2026-11-12: the patched ESD plays them on the upper body too,
 # so with JT7 left in place the character could walk only straight ahead.
-DRINK_ANIMS = (7585, 7586, 7587, 7588, 7589)
+# 7500 (crushed soul) and 7501 (humanity) added 2026-11-13: same patched ESD states (1 and 15), same problem.
+DRINK_ANIMS = (7500, 7501, 7585, 7586, 7587, 7588, 7589)
 JT_MOVE_POSSIBLE, JT_DISABLE_TURNING = 37, 7
 
 # Cancel windows moved to Elden Ring timings (ER 50111 / 50112; the animations have the same length

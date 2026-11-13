@@ -746,6 +746,7 @@ static bool g_drinkOnUpper = false;     // picie przeniesione na warstwy 5/17 je
 constexpr bool kDrinkUpperRedirect = false;
 
 static void TrackDrink(int animId, int layer);  // nizej, wolny chod przy piciu
+static void TrackItemBreak(int animId, int layer);  // below, DrinkSlowWalk section
 
 // Diagnostyka: kazda para (animacja, warstwa) logowana przy pierwszym uzyciu - do mapowania animacji
 // ruchu (chod/bieg/sprint), ktore w DSR nie maja root motion i nie da sie ich rozpoznac z danych.
@@ -862,6 +863,7 @@ static void* __fastcall PlayAnimDetour(void* ctx, void* out, int a3, int a4, cha
     if (kDiag && a4 == 7 && a3 >= 200000 && a3 < 500000 && a3 % 10000 >= 3000 && a3 % 10000 < 6000)
         Log("[%7lu ms] ATAK %d", GetTickCount() - g_t0, a3);
     TrackDrink(a3, a4);
+    if (ctx == g_playerAnimCtx || ctx == g_rollCtx) TrackItemBreak(a3, a4);
     DWORD sinceJump = g_lastJumpInject ? GetTickCount() - g_lastJumpInject : ~0ul;
     bool afterJump = sinceJump < 400;
     if (a3 == -1 && ctx == g_jumpAnimCtx) g_jumpEnded = true;
@@ -1765,6 +1767,31 @@ static int g_drinkLastPart = 0;
 // ER lifts its walk limit 0.30 s into the put-away animation as well.
 constexpr DWORD kDrinkEndReleaseMs = 300;
 constexpr DWORD kDrinkPartMaxMs = 3000;
+// 7586 (the sip) repeats with the same ID when the player chains drinks, so the value in ActionCtrl does not
+// change and the 3 s failsafe used to lift the cap after 5-6 sips. A chain gets a long limit instead; a drink
+// broken by another full-body animation is detected directly (g_itemBrokenAt, set in PlayAnimDetour).
+constexpr DWORD kDrinkChainMaxMs = 22000;
+static DWORD g_itemBrokenAt = 0;
+
+// Item animations the patched ESD plays on the upper body: Estus 7585-7589, crushed items 7500 (souls)
+// and 7501 (humanity).
+static bool IsItemWalkAnim(int a) { return (a >= 7585 && a <= 7589) || a == 7500 || a == 7501; }
+static DWORD ItemPartMaxMs(int a) {
+    switch (a) {
+        case 7586: return kDrinkChainMaxMs;
+        case 7500: return 2600;  // TAE length 2.10 s
+        case 7501: return 4700;  // TAE length 4.13 s
+        default: return kDrinkPartMaxMs;
+    }
+}
+
+// Called from PlayAnimDetour: a full-body animation of the player started while an item animation was in
+// ActionCtrl - the item use is over, whatever stale value the game leaves behind.
+static void TrackItemBreak(int animId, int layer) {
+    if (layer != 7 || animId < 0 || IsItemWalkAnim(animId)) return;
+    DWORD now = GetTickCount();
+    g_itemBrokenAt = now ? now : 1;
+}
 
 static bool DrinkActive() {
     static int lastAnim = -1;
@@ -1775,7 +1802,7 @@ static bool DrinkActive() {
     __try {
         for (int off : {0x78, 0x80}) {
             int a = *reinterpret_cast<int*>(r[2].ptr + off);
-            if (a >= 7585 && a <= 7589) { anim = a; break; }
+            if (IsItemWalkAnim(a)) { anim = a; break; }
         }
     } __except (EXCEPTION_EXECUTE_HANDLER) {
     }
@@ -1789,9 +1816,11 @@ static bool DrinkActive() {
     }
     DWORD held = GetTickCount() - lastAnimSince;
     if (anim == 7587 && held > kDrinkEndReleaseMs) return false;
+    // Broken by another full-body animation after this stage started (hit, roll, attack).
+    if (anim != -1 && g_itemBrokenAt && static_cast<LONG>(g_itemBrokenAt - lastAnimSince) > 0) return false;
     // Bezpiecznik: po przerwanym piciu (trafienie) gra zostawia w ActionCtrl stara wartosc -
     // zadna czesc picia nie trwa > ~2.5 s, wiec dluzej = picie juz sie nie toczy.
-    if (anim != -1 && held > kDrinkPartMaxMs) {
+    if (anim != -1 && held > ItemPartMaxMs(anim)) {
         static int warnedFor = -1;
         if (warnedFor != anim) {
             Log("[%7lu ms] picie: wartosc %d w ActionCtrl od %lu ms - uznaje za zakonczone (bezpiecznik)",
