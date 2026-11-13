@@ -1,6 +1,6 @@
 # Raport z nocy 2026-11-13 (do wklejenia do PLAN_PROJEKTU.md)
 
-Wszystko poniżej jest **NIE testowane w grze**. Główny mod (`dist\mods\c0000_er_engine`), wydanie v1.1 i gałąź `main` są nietknięte. Kod i skrypty leżą na lokalnej gałęzi `night-2026-11-13` (2 commity, bez pusha). Folder Nightreign nie został zmieniony (lista plików i daty przed i po wypakowaniu identyczne).
+Wszystko poniżej jest **NIE testowane w grze**. Główny mod (`dist\mods\c0000_er_engine`), wydanie v1.1 i gałąź `main` są nietknięte. Kod i skrypty leżą na lokalnej gałęzi `night-2026-11-13` (4 commity, bez pusha; `docs\PLAN_PROJEKTU.md` z ręcznymi dopiskami gracza zostawiony niezacommitowany). Folder Nightreign nie został zmieniony (lista plików i daty przed i po wypakowaniu identyczne).
 
 ## 1. Co zostało zrobione
 
