@@ -180,8 +180,42 @@ def install(args, results: dict) -> None:
     ntae = read_file(sf.TAE, str(find_ci(BP / f"nr_{args.nr}" / "anibnd", f"{args.nr}.tae")))
     say()
     say("TAE retime (anchors old:new from hit windows; 'scale' = only the length ratio was available)")
+    def jt_of(ev):
+        p = bytes(ev.GetParameterBytes(False))
+        return struct.unpack_from("<i", p)[0] if int(ev.Type) == 0 and len(p) >= 4 else None
+
+    def clone(ev, start, end):
+        return sf.TAE.Event(start, end, ev.Type, ev.Unk04, ev.GetParameterBytes(False), False)
+
     for (nr_id, dsr_id), res in sorted(results.items(), key=lambda kv: kv[0][1]):
-        files[f"a00_{dsr_id:04d}.hkx"].Bytes = to_memory(net_bytes(res["path"].read_bytes()))
+        new_id = res.get("new_id", dsr_id)
+        data = to_memory(net_bytes(res["path"].read_bytes()))
+        if new_id == dsr_id:
+            files[f"a00_{dsr_id:04d}.hkx"].Bytes = data
+        else:
+            # New attack under its own number: new HKX entry (binder ID = animation ID) and a new TAE
+            # animation whose events start as a copy of the template attack.
+            tpl_entry = files[f"a00_{dsr_id:04d}.hkx"]
+            name = str(tpl_entry.Name).replace(f"a00_{dsr_id:04d}", f"a00_{new_id:04d}")
+            entry = sf.BinderFile(tpl_entry.Flags, new_id, name, data)
+            pos = next((i for i, f in enumerate(bnd.Files) if int(f.ID) > new_id), bnd.Files.Count)
+            bnd.Files.Insert(pos, entry)
+            files[f"a00_{new_id:04d}.hkx"] = entry
+            if any(int(a.ID) == new_id for a in tae.Animations):
+                raise RuntimeError(f"TAE already has animation {new_id}")
+            src_anim = next(a for a in tae.Animations if int(a.ID) == dsr_id)
+            na = sf.TAE.Animation(new_id, False, 0, -1, f"a00_{new_id:04d}.hkxwin")
+            for ev in src_anim.Events:
+                na.Events.Add(clone(ev, float(ev.StartTime), float(ev.EndTime)))
+            pos = next((i for i, a in enumerate(tae.Animations) if int(a.ID) > new_id), tae.Animations.Count)
+            tae.Animations.Insert(pos, na)
+        tpl_anim = next((a for a in tae.Animations if int(a.ID) == dsr_id), None)
+        first_hit = None
+        if tpl_anim is not None:
+            hits_ev = sorted((ev for ev in tpl_anim.Events if int(ev.Type) in atk1 and float(ev.StartTime) > 0.01),
+                             key=lambda ev: float(ev.StartTime))
+            first_hit = hits_ev[0] if hits_ev else None
+        paired_nr: set[int] = set()
         dh, _ = hit_windows(tae, dsr_id, atk1, bul1)
         nh, ndur = hit_windows(ntae, nr_id, atke, bule)
         anchors = [(0.0, 0.0)]
@@ -190,6 +224,7 @@ def install(args, results: dict) -> None:
             mode = f"{len(dh)} hit(s)"
             for (ds, dt), (ns, nt) in zip(dh, nh):
                 anchors += [(ds, ns), (dt, nt)]
+            paired_nr = set(range(len(nh)))
         elif dh and nh:  # different number of windows: each window of the shorter list takes the nearest
             # unused one of the longer list (by start time, order kept); the rest have no partner
             short, long_, swap = (dh, nh, False) if len(dh) < len(nh) else (nh, dh, True)
@@ -200,6 +235,7 @@ def install(args, results: dict) -> None:
                 j = min(range(j0, len(long_)), key=lambda k: abs(long_[k][0] - w[0]))
                 dwin, nwin = (long_[j], w) if swap else (w, long_[j])
                 anchors += [(dwin[0], nwin[0]), (dwin[1], nwin[1])]
+                paired_nr.add(nh.index(nwin))
                 j0, n_pairs = j + 1, n_pairs + 1
             mode = f"nearest {n_pairs} of {len(dh)} vs {len(nh)} hits"
         # NR clips can run far past the last event (a001 Artorias: 9.3 s clip, events end at 4.4 s)
@@ -209,7 +245,9 @@ def install(args, results: dict) -> None:
         mono = all(b1 > b0 and a1 > a0 for (a0, b0), (a1, b1) in zip(anchors, anchors[1:]))
         if not mono:
             anchors, mode = [(0.0, 0.0), (res["dsr_dur"], res["nr_dur"])], "scale (hit order mismatch)"
-        anim = next((a for a in tae.Animations if int(a.ID) == dsr_id), None)
+        anim = next((a for a in tae.Animations if int(a.ID) == new_id), None)
+        nanim = (next((a for a in ntae.Animations if int(a.ID) == nr_id), None)
+                 or next((a for a in ntae.Animations if int(a.ID) == 1000000 + nr_id), None))
         n_ev = 0
         if anim is not None:
             for ev in anim.Events:
@@ -217,12 +255,34 @@ def install(args, results: dict) -> None:
                 e1 = max(round(warp(float(ev.EndTime), anchors) * 30) / 30.0, s1 + 1 / 30.0)
                 ev.StartTime, ev.EndTime = s1, e1
                 n_ev += 1
+        if args.extra_hits and anim is not None and first_hit is not None and nh:
+            # NR hit windows without a DSR partner (second swing of a new two-hit attack): repeat the
+            # template's first attack behaviour there, so the swing deals damage.
+            extra = [w for i, w in enumerate(nh) if i not in paired_nr]
+            for ns, nt in extra:
+                anim.Events.Add(clone(first_hit, round(ns * 30) / 30.0, max(round(nt * 30) / 30.0, ns + 1 / 30.0)))
+            if extra:
+                mode += f", +{len(extra)} hit"
+        if args.nr_ai and anim is not None and nanim is not None:
+            # Combo / next-action windows (JT23, 78, 79, 86 - same IDs in both games) at the NR times.
+            moved = 0
+            for j in (23, 78, 79, 86):
+                ns = [float(ev.StartTime) for ev in nanim.Events if jt_of(ev) == j]
+                mine = [ev for ev in anim.Events if jt_of(ev) == j]
+                if not ns or not mine:
+                    continue
+                keep = [ev for ev in anim.Events if jt_of(ev) != j]
+                length = max(float(mine[0].EndTime) - float(mine[0].StartTime), 0.5)
+                anim.Events.Clear()
+                for ev in keep:
+                    anim.Events.Add(ev)
+                anim.Events.Add(clone(mine[0], min(ns), min(ns) + length))
+                moved += 1
+            mode += f", ai {moved}"
         if args.nr_turn and anim is not None:
             # Turning toward the target: take the SetTurnSpeed (224) windows of the NR animation instead of
             # the warped DSR ones (first float = deg/s in both formats). Without this a new multi-part
             # attack keeps the heading of its first part (Artorias 3026: the leap missed the player).
-            nanim = (next((a for a in ntae.Animations if int(a.ID) == nr_id), None)
-                     or next((a for a in ntae.Animations if int(a.ID) == 1000000 + nr_id), None))
             old_turn = [ev for ev in anim.Events if int(ev.Type) == 224]
             new_turn = [ev for ev in (nanim.Events if nanim is not None else []) if int(ev.Type) == 224]
             tpl = old_turn[0] if old_turn else next(
@@ -240,8 +300,15 @@ def install(args, results: dict) -> None:
                     speed = bytes(ev.GetParameterBytes(False))[:4]
                     anim.Events.Add(sf.TAE.Event(s1, e1, 224, tpl.Unk04, net_bytes(speed), False))
                 mode += f", turn {len(old_turn)}->{len(new_turn)}"
-        say(f"  {dsr_id}: {mode:28s} DSR hits {['%.2f-%.2f' % tuple(h) for h in dh or []]} -> "
+        say(f"  {new_id if new_id == dsr_id else f'{new_id} (tpl {dsr_id}, NR {nr_id})'}: {mode:28s} DSR hits {['%.2f-%.2f' % tuple(h) for h in dh or []]} -> "
             f"NR {['%.2f-%.2f' % tuple(h) for h in nh or []]}; {n_ev} events moved")
+    for spec in args.jt:  # ANIM:JT:START - move one window of an untouched DSR animation
+        aid, j, start = spec.split(":")
+        a = next(a for a in tae.Animations if int(a.ID) == int(aid))
+        for ev in list(a.Events):
+            if jt_of(ev) == int(j):
+                say(f"  {aid}: JT{j} {float(ev.StartTime):.2f} -> {float(start):.2f}")
+                ev.StartTime = float(start)
     tentry.Bytes = to_memory(tae.Write())
     dst = (ROOT / "dist" / "mods" / "bossy_nightreign" / f"files_{args.dsr}{args.tag}" / "chr"
            / f"{args.dsr}.anibnd.dcx")
@@ -257,11 +324,17 @@ def main(argv=None) -> int:
     ap.add_argument("--nr", required=True)
     ap.add_argument("--dsr", required=True)
     ap.add_argument("--anims", type=int, nargs="*", help="IDs (same in both games); default: all shared")
-    ap.add_argument("--pair", action="append", default=[], metavar="NR:DSR", help="explicit ID pair")
+    ap.add_argument("--pair", action="append", default=[], metavar="NR:DSR[:NEW]",
+                    help="explicit ID pair; with NEW the NR clip becomes a new DSR animation number and DSR is "
+                         "only the template for its events")
     ap.add_argument("--lo", type=int, default=3000)
     ap.add_argument("--hi", type=int, default=3999)
     ap.add_argument("--install", action="store_true")
     ap.add_argument("--nr-turn", action="store_true", help="install: SetTurnSpeed windows from the NR TAE")
+    ap.add_argument("--nr-ai", action="store_true", help="install: combo / next-action windows at NR times")
+    ap.add_argument("--extra-hits", action="store_true", help="install: damage for unpaired NR hit windows")
+    ap.add_argument("--jt", action="append", default=[], metavar="ANIM:JT:START",
+                    help="install: move a JumpTable window of an untouched DSR animation")
     ap.add_argument("--reuse", action="store_true", help="keep already ported HKX, redo only the install")
     ap.add_argument("--tag", default="", help="suffix of the files_<dsr> folder and of the report (variants)")
     args = ap.parse_args(argv)
@@ -332,14 +405,16 @@ def main(argv=None) -> int:
     say()
     say(f"{'DSR':>5} {'NR':>6} {'DSR s':>6} {'NR s':>6}  {'root motion end DSR -> NR*S (x,y,z)':52s} {'B':>8} drift")
     results = {}
-    for nr_id, dsr_id in pairs:
-        out = BP / "nr_ported" / args.dsr / f"a00_{dsr_id:04d}.hkx"
+    for pair in pairs:
+        nr_id, dsr_id = pair[0], pair[1]
+        new_id = pair[2] if len(pair) > 2 else dsr_id  # NR:TEMPLATE:NEW = add as a new animation number
+        out = BP / "nr_ported" / f"{args.dsr}{args.tag}" / f"a00_{new_id:04d}.hkx"
         try:
             if args.reuse and out.exists():  # ported earlier: only the lengths are needed for the install
                 ename = f"a{nr_id // 1000000:03d}_{nr_id % 1000000:06d}.hkx"
                 ec, _ = load_anim(e.AnimationHKX, ED / ename, comp_for(ename))
                 dc, _ = load_anim(d.AnimationHKX, find_ci(DD, f"a00_{dsr_id:04d}.hkx"))
-                results[(nr_id, dsr_id)] = {"nr_dur": float(ec.hkx_animation.duration),
+                results[(nr_id, dsr_id)] = {"nr_dur": float(ec.hkx_animation.duration), "new_id": new_id,
                                             "dsr_dur": float(dc.hkx_animation.duration), "path": out}
                 say(f"{dsr_id:5d} {nr_id:6d} reused {out.name}")
                 continue
@@ -348,6 +423,7 @@ def main(argv=None) -> int:
             say(f"{dsr_id:5d} {nr_id:6d} FAILED: {type(ex).__name__}: {str(ex)[:200]}")
             continue
         r["path"] = out
+        r["new_id"] = new_id
         results[(nr_id, dsr_id)] = r
         f3 = lambda v: "none" if v is None else "(" + ", ".join(f"{x:.2f}" for x in v[:3]) + ")"  # noqa: E731
         say(f"{dsr_id:5d} {nr_id:6d} {r['dsr_dur']:6.2f} {r['nr_dur']:6.2f}  "

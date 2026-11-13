@@ -240,6 +240,24 @@ Modularna architektura moda (Gracz / Bossowie): Rozdzielić zawartość moda na 
 
 
 
+## 5a. Artorias (c4100) — AKTYWNA PRACA (2026-11-13)
+
+**Cel gracza:** Artorias ma być szczytowym bossem przeróbki — szybszy i trudniejszy do unikania, dopasowany do nowego ruchu gracza; mniej doskoków niż w Nightreign, bo arena jest zamknięta.
+
+**Ustalenia (dane, nie test):**
+- Nightreign: c7720, AI `772000_battle` (goal `Artorius772000_Battle`). Ataki 3000–3014, 3023 to te same klipy co w DS1; **czasy trafień i okna AI (JT23 combo, JT86 atak, JT78 ruch) są identyczne** — tabela `analysis\nr_timing_c4100.md` (`python tools\nr_timing_table.py c4100 c7720`). NR używa tych samych numerów JumpTable dla wrogów co DSR.
+- Skąd tempo NR: (1) druga faza poniżej 65% HP (efekt 5401, zestaw animacji a001) z nowymi atakami 3026, 3027, 3028, 3030–3034 łączonymi w łańcuchy; (2) w a001 wcześniejsze okno combo dla 3004 (3,03 → 2,07 s) i 3007 (3,37 → 2,43 s); (3) wagi doskoków w fazie 2 podniesione z 15–40 do 100–140; (4) czasy odnowienia ataków. AI NR to skrypt DS1 (te same numery akcji i wagi) z dopisaną fazą 2.
+- `enemyCommon.esd` (wspólna maszyna stanów wrogów DSR) przyjmuje numery ataków 3000–3029 (+3100, 3110, 3200) — nowe ataki muszą się w tym zmieścić. Wolne u Artoriasa: 3015–3019, 3022, 3024–3029.
+- Atak 3026 z NR „gubił" gracza, bo slot miał okna obrotu starego ataku — instalator bierze teraz `SetTurnSpeed` (typ 224, pierwszy float = stopnie/s w obu grach) z NR (`--nr-turn`).
+
+**Paczka v1 (przetestowana przez gracza 2026-11-13: „wygląda dobrze", za dużo doskoków, jeden atak mijał):** `dist\mods\bossy_nightreign\launch_nr_artorias_new.bat` — 7 nowych ataków na starych slotach, AI oryginalne. Po teście dodane okna obrotu z NR (nie testowane).
+
+**Paczka v2 (NIE testowana w grze):** `dist\mods\bossy_nightreign\launch_nr_artorias_v2.bat` (`files_c4100_v2\chr\c4100.anibnd.dcx` + `files_c4100_v2\script\m12_01_00_00.luabnd.dcx`).
+- Wszystkie oryginalne ataki zostają. Nowe jako własne numery (NR → DSR, szablon zdarzeń): 3026 → 3026 (3007), 3027 → 3027 (3005), 3028 → 3028 (3000), 3030 → 3017 (3001), 3031 → 3018 (3011), 3032 → 3019 (3004), 3033 → 3024 (3014), 3034 → 3025 (3011). Zdarzenia: kopia szablonu przesunięta kotwicami trafień, okna obrotu i okna AI z NR, drugi cios dostaje powtórzone zachowanie ataku szablonu (`--extra-hits`). Okno combo 3004 i 3007 przesunięte na wartości a001.
+- AI (`tools\make_artorias_ai.py` → `work\boss_ai\410000_battle.nr_v2.lua`; edycje na zdekompilowanym skrypcie DSR): faza 2 = HP ≤ 65%; 3004 → 3024 (60%), 3007 → 3025 (55%), 3027 → 3028 zamiast zwykłej szarży 3005, 3003 → [3009] → 3026 (40%), nowa akcja 14: 3017 → 3018 → 3019; licznik 3 blokuje kolejny długi doskok przez 12–14 s; w fazie 2 rzadsze odchodzenie po ataku (średnia z wartości zwykłej i „po wzmocnieniu"). Faza 1 = oryginał.
+- **Niewiadome do testu:** czy gra przyjmie nowe wpisy HKX i animacje TAE dodane do BND3 (pierwszy raz w projekcie); czy combo przechodzą (JT23 z NR); obrażenia i zasięg nowych ataków (pożyczone z szablonu); dźwięki i efekty to te z szablonu.
+- Polecenie odtwarzające anibnd: `python tools\nr_boss_port.py --nr c7720 --dsr c4100 --tag _v2 --pair 1003026:3007:3026 --pair 1003027:3005:3027 --pair 1003028:3000:3028 --pair 1003030:3001:3017 --pair 1003031:3011:3018 --pair 1003032:3004:3019 --pair 1003033:3014:3024 --pair 1003034:3011:3025 --install --nr-turn --nr-ai --extra-hits --jt 3004:23:2.067 --jt 3007:23:2.433` (z `--reuse` bez ponownego portu).
+
 ## 6. Nowe ustalenia z zamkniętych wątków (2026-11-12)
 
 - **Unik — czemu nie wychodził:** gra zgłasza unik (`+0x93`) tylko, gdy kierunek jest wciśnięty w chwili klawisza. Klawisz 15–30 ms przed kierunkiem daje zero reakcji. Bufor V4 to rozwiązuje.

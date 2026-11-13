@@ -8,6 +8,9 @@ LAUNCHER = r"C:\Users\nemos\workspace\toolsy\ModEngine2\modengine2_launcher.exe"
 VARIANTS = {
     "artorias_new": ("Artorias (c4100): 7 new Nightreign attacks (a001 set) placed on old attack slots "
                      "3000/3001/3004/3005/3007/3011/3014; original AI", ["files_c4100_nr_new"]),
+    "artorias_v2": ("Artorias (c4100) v2: all original attacks kept, 8 Nightreign phase-2 attacks added as "
+                    "3017-3019 / 3024-3028, AI with phase 2 below 65 % HP (tools/make_artorias_ai.py)",
+                    ["files_c4100_v2"]),
     "centipede": ("Centipede Demon (c5200): attacks 3000-3009 with Nightreign animations; original AI",
                   ["files_c5200"]),
     "gaping": ("Gaping Dragon (c5260): attacks 3000-3010 with Nightreign animations; original AI",
