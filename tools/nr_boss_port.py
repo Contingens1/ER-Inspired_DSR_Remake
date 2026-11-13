@@ -134,6 +134,15 @@ def port_one(ctx, nr_id: int, dsr_id: int, out: Path) -> dict:
         # --rm-scale: NR stretches the lunges toward the target at run time (TAE 760); DSR cannot, so a
         # clip made for a huge arena can be shortened here (translation only, yaw untouched).
         erm[:, :3] *= S * ctx["rm_scale"].get(nr_id, 1.0)
+        # --rm-scale-window: stretch only one part of the clip (horizontal steps inside T0..T1 x FACTOR), e.g. the
+        # leap of 3026 that NR scales at run time with TAE 760 (window 2.83-3.17 s, 2.5-15 m to the target).
+        for t0, t1, k in ctx["rm_window"].get(nr_id, []):
+            t = np.linspace(0.0, nr_dur, erm.shape[0])
+            dpos = np.diff(erm[:, :3], axis=0)
+            mid = (t[1:] + t[:-1]) / 2
+            inside = (mid >= t0) & (mid <= t1)
+            dpos[np.ix_(inside, [0, 2])] *= k
+            erm[1:, :3] = erm[0, :3] + np.cumsum(dpos, axis=0)
         if nr_id in ctx["rm_straighten"]:
             # NR lunges travel diagonally and are aimed at run time; DS1 aims its own leaps (3003, 3009)
             # only by turning the character while the clip moves straight ahead. Project the path onto
@@ -398,7 +407,11 @@ def main(argv=None) -> int:
                     help="port: scale the root-motion translation of one NR clip (closed arenas)")
     ap.add_argument("--rm-straighten", type=int, nargs="*", default=[], metavar="NR",
                     help="port: fold the root-motion path of these NR clips onto the forward axis")
+    ap.add_argument("--rm-scale-window", action="append", default=[], metavar="NR:T0:T1:FACTOR",
+                    help="port: scale the horizontal root motion of one NR clip only between T0 and T1 s (one leap)")
     ap.add_argument("--reuse", action="store_true", help="keep already ported HKX, redo only the install")
+    ap.add_argument("--redo", type=int, nargs="*", default=[], metavar="NR",
+                    help="with --reuse: port these NR clips again anyway")
     ap.add_argument("--tag", default="", help="suffix of the files_<dsr> folder and of the report (variants)")
     args = ap.parse_args(argv)
 
@@ -466,7 +479,10 @@ def main(argv=None) -> int:
                d2e=d2e, e2d=e2d, S=S, dref=dref, dPr=dPr, dRr=dRr, eref=eref, ePr=ePr, eRr=eRr, DD=DD, ED=ED,
                comp_for=comp_for, pelvis=pelvis, master_carries=master_carries,
                rm_scale={int(s.split(":")[0]): float(s.split(":")[1]) for s in args.rm_scale},
-               rm_straighten=set(args.rm_straighten))
+               rm_straighten=set(args.rm_straighten), rm_window={})
+    for s in args.rm_scale_window:
+        nid, t0, t1, k = s.split(":")
+        ctx["rm_window"].setdefault(int(nid), []).append((float(t0), float(t1), float(k)))
     say()
     say(f"{'DSR':>5} {'NR':>6} {'DSR s':>6} {'NR s':>6}  {'root motion end DSR -> NR*S (x,y,z)':52s} {'B':>8} drift")
     results = {}
@@ -475,7 +491,7 @@ def main(argv=None) -> int:
         new_id = pair[2] if len(pair) > 2 else dsr_id  # NR:TEMPLATE:NEW = add as a new animation number
         out = BP / "nr_ported" / f"{args.dsr}{args.tag}" / f"a00_{new_id:04d}.hkx"
         try:
-            if args.reuse and out.exists():  # ported earlier: only the lengths are needed for the install
+            if args.reuse and out.exists() and nr_id not in args.redo:  # ported earlier: lengths for the install
                 ename = f"a{nr_id // 1000000:03d}_{nr_id % 1000000:06d}.hkx"
                 ec, _ = load_anim(e.AnimationHKX, ED / ename, comp_for(ename))
                 dc, _ = load_anim(d.AnimationHKX, find_ci(DD, f"a00_{dsr_id:04d}.hkx"))

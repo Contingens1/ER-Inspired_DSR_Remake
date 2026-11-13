@@ -258,6 +258,8 @@ static void AirControlOnPlayAnim(int anim, int layer);
 static void PhysProbeTick();            // nizej, sonda fizyki skoku (tylko odczyt)
 static void EnemyProbeTick();           // below: enemy attack probe (read-only, ER_DIAG)
 static void HangProbeTick(const BYTE* ctx, void* p3);  // below: frozen-player probe (read-only, ER_DIAG)
+static void HangRepairTick(void* p3);                    // below: move-flag watch and repair ([Fixes] HangRepair)
+static DWORD g_rollEndAt = 0;  // end of the player's last roll / backstep (L7 700-799 -> -1); 0 = another anim since
 static void AirMomentumTick(float dt);  // nizej, rozped w spadaniu po skoku
 static void AirMomentumStart(int anim);
 static void AirMomentumOnOtherAnim();
@@ -523,7 +525,36 @@ static void OmniRollOnPlayAnim(void* ctx, int anim, int layer, int a6) {
 }
 
 static bool g_freeStaminaOn = true;  // [Stamina] FreeOutOfCombat (see FreeStaminaTick)
+static bool g_artOn = false;         // [Bosses] ArtoriasPhase2, resolved (see ArtoriasPhaseTick)
+static bool g_hangRepairOn = true;   // [Fixes] HangRepair (see HangRepairTick)
 static bool g_itemHitCancelOn = true;  // [Items] HitCancelsItem (see ItemUpperOnPlayAnim)
+
+// [Bosses] ArtoriasPhase2: 1 on, 0 off, 2 auto (default) = on only when this run loads the Artorias boss files:
+// the release layout (bin\er_engine.dll next to files\chr\c4100.anibnd.dcx, the boss files ship inside the main
+// package since 1.3) or a Mod Engine 2 config (env MODENGINE_CONFIG, set by modengine2_launcher) that loads the
+// dev boss package files_c4100_v2. The plain mod must never touch the vanilla Artorias: without the package's AI
+// he would stay at 0 HP with no transition (the 20 s fail-safe in ArtoriasPhaseTick would end it).
+static bool ResolveArtoriasPhase2(int cfg, char* why, size_t whyLen) {
+    if (cfg == 0 || cfg == 1) { sprintf_s(why, whyLen, "ini %d", cfg); return cfg == 1; }
+    char rel[MAX_PATH + 64];
+    _snprintf_s(rel, _TRUNCATE, "%s..\\files\\chr\\c4100.anibnd.dcx", g_dir);
+    if (GetFileAttributesA(rel) != INVALID_FILE_ATTRIBUTES) {
+        _snprintf_s(why, whyLen, _TRUNCATE, "auto: release boss files present (%s)", rel);
+        return true;
+    }
+    char path[MAX_PATH] = {};
+    DWORD n = GetEnvironmentVariableA("MODENGINE_CONFIG", path, MAX_PATH);
+    if (!n || n >= MAX_PATH) { sprintf_s(why, whyLen, "auto: MODENGINE_CONFIG not set"); return false; }
+    FILE* f = nullptr;
+    if (fopen_s(&f, path, "rb") || !f) { sprintf_s(why, whyLen, "auto: cannot read %s", path); return false; }
+    static char buf[65536];
+    size_t got = fread(buf, 1, sizeof(buf) - 1, f);
+    fclose(f);
+    buf[got] = 0;
+    bool on = strstr(buf, "files_c4100_v2") != nullptr;
+    sprintf_s(why, whyLen, "auto: %s %s files_c4100_v2", path, on ? "loads" : "does not load");
+    return on;
+}
 static DWORD g_itemBrokenAt = 0;       // item use broken by another animation (see DrinkActive)
 static bool IsItemWalkAnim(int a);     // defined below in the DrinkSlowWalk section
 
@@ -535,8 +566,13 @@ static void LoadConfigIni() {
     g_lockSprintOn = GetPrivateProfileIntA("Roll", "LockOnSprint", 1, iniPath) != 0;
     g_freeStaminaOn = GetPrivateProfileIntA("Stamina", "FreeOutOfCombat", 1, iniPath) != 0;
     g_itemHitCancelOn = GetPrivateProfileIntA("Items", "HitCancelsItem", 1, iniPath) != 0;
+    g_hangRepairOn = GetPrivateProfileIntA("Fixes", "HangRepair", 1, iniPath) != 0;
+    Log("config: HangRepair=%d", g_hangRepairOn ? 1 : 0);
+    char artWhy[MAX_PATH + 64];
+    g_artOn = ResolveArtoriasPhase2(GetPrivateProfileIntA("Bosses", "ArtoriasPhase2", 2, iniPath), artWhy, sizeof(artWhy));
     Log("config: OmniRoll=%d RollBuffer=%d LockOnSprint=%d FreeOutOfCombat=%d HitCancelsItem=%d (%s)", g_omniRollOn ? 1 : 0,
         g_rollBufferOn ? 1 : 0, g_lockSprintOn ? 1 : 0, g_freeStaminaOn ? 1 : 0, g_itemHitCancelOn ? 1 : 0, iniPath);
+    Log("config: ArtoriasPhase2=%d (%s)", g_artOn ? 1 : 0, artWhy);
 }
 
 static bool IsMoveKey(int c) { return c == 'W' || c == 'A' || c == 'S' || c == 'D'; }
@@ -789,6 +825,158 @@ static bool ScanEnemyAggro(AggroScan& out) {
     return true;
 }
 
+// --- Artorias phase 2 (boss test package, docs/PLAN_PROJEKTU.md §6a) ----------------------------
+// Phase 1 of the Nightreign-style Artorias ends at HP 0: the DLL keeps him alive with ChrFlags2 NoDead (DSR-Gadget
+// ChrData1+0x514 bit 0x20; +0x10 in this exe = chr+0x524, the word of the stamina bit) until his transition 3016
+// has played. The rest is data: the AI starts 3016 at HP <= 1 % (tools/make_artorias_ai.py), 3016 makes him
+// take no damage and refills his HP, its burst gives SpEffect 5513 = phase 2 (tools/artorias_phase2.py).
+// Artorias = the enemy with NpcThinkParam ID 410000. Lua binding GetNpcThinkParamID (FUN_1405b66b0) returns
+// *(int*)(ai + 0xB8) of the object it wraps; both AI objects of AiStateOfEnemy are tried (log says which).
+constexpr int kArtoriasThinkId = 410000;
+constexpr int kArtoriasTransitionAnim = 3016;
+constexpr DWORD kArtoriasStuckMs = 20000;  // fail-safe: at <= 1 % HP this long without 3016 -> NoDead off
+constexpr DWORD kChrNoDead = 0x20;
+static BYTE* g_artChr = nullptr;
+static int g_artPhase = 0;                 // 0 phase 1, 1 transition playing, 2 phase 2 (NoDead off)
+static DWORD g_artLowSince = 0;
+
+struct ThinkIdScan { int scanned; int sample[4][2]; int samples; };
+
+// Enemy whose NpcThinkParam ID (ai+0xB8 or *(ai+0x30)+0xB8) is `id`; which = 1 / 2 tells the matching offset.
+static BYTE* FindEnemyByThinkId(int id, int* which, ThinkIdScan* sc) {
+    *which = 0;
+    *sc = {};
+    __try {
+        auto base = reinterpret_cast<BYTE*>(GetModuleHandleA(nullptr));
+        ULONG_PTR vtEnemy = reinterpret_cast<ULONG_PTR>(base) + kEnemyInsVtableRva;
+        BYTE* w = *reinterpret_cast<BYTE**>(base + 0x1C77E50);
+        if (!w) return nullptr;
+        int blocks = *reinterpret_cast<int*>(w + 0x28);
+        BYTE* arr = *reinterpret_cast<BYTE**>(w + 0x30);
+        if (blocks <= 0 || blocks > 64 || reinterpret_cast<ULONG_PTR>(arr) < 0x10000) return nullptr;
+        for (int b = 0; b < blocks; b++) {
+            BYTE* blk = arr + b * 0xE8;
+            int n = *reinterpret_cast<int*>(blk + 0x48);
+            BYTE* ent = *reinterpret_cast<BYTE**>(blk + 0x50);
+            if (n <= 0 || n > 2048 || reinterpret_cast<ULONG_PTR>(ent) < 0x10000) continue;
+            for (int i = 0; i < n; i++) {
+                BYTE* chr = *reinterpret_cast<BYTE**>(ent + i * 0x38);
+                if (reinterpret_cast<ULONG_PTR>(chr) < 0x10000) continue;
+                __try {
+                    if (*reinterpret_cast<ULONG_PTR*>(chr) != vtEnemy) continue;
+                    BYTE* man = *reinterpret_cast<BYTE**>(chr + 0x570);
+                    if (reinterpret_cast<ULONG_PTR>(man) < 0x10000) continue;
+                    BYTE* ai = *reinterpret_cast<BYTE**>(man + 0x230);
+                    if (reinterpret_cast<ULONG_PTR>(ai) < 0x10000) continue;
+                    int id1 = *reinterpret_cast<int*>(ai + 0xB8), id2 = -1;
+                    BYTE* st = *reinterpret_cast<BYTE**>(ai + 0x30);
+                    if (reinterpret_cast<ULONG_PTR>(st) >= 0x10000) id2 = *reinterpret_cast<int*>(st + 0xB8);
+                    if (sc->samples < 4) { sc->sample[sc->samples][0] = id1; sc->sample[sc->samples][1] = id2; sc->samples++; }
+                    sc->scanned++;
+                    if (id1 == id || id2 == id) { *which = id1 == id ? 1 : 2; return chr; }
+                } __except (EXCEPTION_EXECUTE_HANDLER) {
+                }
+            }
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+    }
+    return nullptr;
+}
+
+static void ArtoriasReset(const char* why) {
+    if (g_artChr || g_artPhase) Log("[%7lu ms] artorias: reset (%s), phase %d -> 0", GetTickCount() - g_t0, why, g_artPhase);
+    g_artChr = nullptr;
+    g_artPhase = 0;
+    g_artLowSince = 0;
+}
+
+// Called every frame after the input handler (p3 + 0x10 = player character).
+static void ArtoriasPhaseTick(void* p3) {
+    if (!g_artOn) return;
+    DWORD now = GetTickCount();
+    static DWORD lastTick = 0, scanAt = 0, notFoundLogAt = 0, hpLogAt = 0;
+    if (lastTick && now - lastTick > 2000) ArtoriasReset("no frames for 2 s (loading / menu)");
+    lastTick = now;
+    __try {
+        BYTE* pl = *reinterpret_cast<BYTE**>(static_cast<BYTE*>(p3) + 0x10);
+        if (reinterpret_cast<ULONG_PTR>(pl) >= 0x10000 && *reinterpret_cast<int*>(pl + 0x3E8) <= 0 && g_artPhase)
+            ArtoriasReset("player dead");
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+    }
+    if (now - scanAt >= 250) {
+        scanAt = now;
+        int which = 0;
+        ThinkIdScan sc;
+        BYTE* chr = FindEnemyByThinkId(kArtoriasThinkId, &which, &sc);
+        if (chr != g_artChr) {
+            if (g_artChr) ArtoriasReset(chr ? "other character" : "boss gone");
+            g_artChr = chr;
+            if (chr) {
+                __try {
+                    Log("[%7lu ms] artorias: found chr %p via %s, hp %d/%d, flags2 %08X (%d enemies scanned)",
+                        now - g_t0, chr, which == 1 ? "ai+0xB8" : "*(ai+0x30)+0xB8", *reinterpret_cast<int*>(chr + 0x3E8),
+                        *reinterpret_cast<int*>(chr + 0x3EC), *reinterpret_cast<DWORD*>(chr + 0x524), sc.scanned);
+                } __except (EXCEPTION_EXECUTE_HANDLER) {
+                }
+            }
+        }
+        if (!chr && kDiag && sc.scanned && now - notFoundLogAt > 15000) {
+            notFoundLogAt = now;
+            Log("[%7lu ms] artorias: not among %d enemies (think ids ai+0xB8 / *(ai+0x30)+0xB8: %d/%d %d/%d %d/%d %d/%d)",
+                now - g_t0, sc.scanned, sc.sample[0][0], sc.sample[0][1], sc.sample[1][0], sc.sample[1][1],
+                sc.sample[2][0], sc.sample[2][1], sc.sample[3][0], sc.sample[3][1]);
+        }
+    }
+    if (!g_artChr || g_artPhase >= 2) return;
+    __try {
+        DWORD* flags = reinterpret_cast<DWORD*>(g_artChr + 0x524);
+        int hp = *reinterpret_cast<int*>(g_artChr + 0x3E8), maxHp = *reinterpret_cast<int*>(g_artChr + 0x3EC);
+        if (!(*flags & kChrNoDead)) {
+            *flags |= kChrNoDead;
+            Log("[%7lu ms] artorias: NoDead on (phase %d, hp %d/%d)", now - g_t0, g_artPhase, hp, maxHp);
+        }
+        bool low = maxHp > 0 && hp * 100 <= maxHp;
+        if (g_artPhase == 0 && low) {
+            if (!g_artLowSince) {
+                g_artLowSince = now ? now : 1;
+                Log("[%7lu ms] artorias: hp %d/%d - end of phase 1, waiting for %d", now - g_t0, hp, maxHp,
+                    kArtoriasTransitionAnim);
+            } else if (now - g_artLowSince > kArtoriasStuckMs) {
+                *flags &= ~kChrNoDead;
+                g_artPhase = 2;
+                Log("[%7lu ms] artorias: fail-safe - no transition in %lu s, NoDead off", now - g_t0, kArtoriasStuckMs / 1000);
+            }
+        } else if (!low) {
+            g_artLowSince = 0;
+        }
+        if (g_artPhase == 1 && kDiag && now - hpLogAt >= 500) {  // the refill of the transition (SpEffect 5512)
+            hpLogAt = now;
+            Log("[%7lu ms] artorias: transition hp %d/%d", now - g_t0, hp, maxHp);
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        ArtoriasReset("read failed");
+    }
+}
+
+// Called from PlayAnimDetour: layer 7 of the boss = start / end of the transition.
+static void ArtoriasOnPlayAnim(void* ctx, int anim, int layer) {
+    if (!g_artOn || !g_artChr || layer != 7 || g_artPhase >= 2) return;
+    __try {
+        if (*reinterpret_cast<BYTE**>(static_cast<BYTE*>(ctx) + 0x10) != g_artChr) return;
+        int hp = *reinterpret_cast<int*>(g_artChr + 0x3E8), maxHp = *reinterpret_cast<int*>(g_artChr + 0x3EC);
+        if (anim == kArtoriasTransitionAnim && g_artPhase == 0) {
+            g_artPhase = 1;
+            Log("[%7lu ms] artorias: transition %d started (hp %d/%d)", GetTickCount() - g_t0, anim, hp, maxHp);
+        } else if (g_artPhase == 1 && anim != kArtoriasTransitionAnim) {
+            *reinterpret_cast<DWORD*>(g_artChr + 0x524) &= ~kChrNoDead;
+            g_artPhase = 2;
+            Log("[%7lu ms] artorias: transition over (next anim %d, hp %d/%d) -> phase 2, NoDead off",
+                GetTickCount() - g_t0, anim, hp, maxHp);
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+    }
+}
+
 // Runs after the input handler: the flag is set only in frames where the sprint flag (+0x1E4) is on and
 // the handler raised no roll / backstep / jump request (+0x93..0x96, +0x8E, +0xAE) - those requests are
 // served later in the frame and must find the flag down.
@@ -864,6 +1052,8 @@ static void __fastcall InputDetour(void* ctx, float dt, void* p3) {
     InjectStandingJump(static_cast<BYTE*>(ctx), dt, p3);
     AirAttackBuffer(static_cast<BYTE*>(ctx));
     FreeStaminaTick(static_cast<const BYTE*>(ctx), p3);
+    ArtoriasPhaseTick(p3);
+    HangRepairTick(p3);
     AttackSpeedTick(dt);
     AirControlTick(dt);
     AirMomentumTick(dt);
@@ -1165,9 +1355,27 @@ static void ItemUpperOnPlayAnim(void* ctx, void* out, int anim, int layer, char 
     g_origPlayAnim(ctx, out, -1, 18, a5, a6, 0);
 }
 
+// Hang repair window: opens when a roll / backstep ends on layer 7 and closes on any other player animation
+// on any layer (attacks, items, hit reactions, fog gates and other events on layers 10/25 ...). Test 2026-11-13:
+// the move flag ActionCtrl+0x1DC 0x100000 also drops during attacks, items and the fog gate - only the roll
+// case is the hang.
+static void HangRepairOnPlayAnim(int anim, int layer) {
+    static int lastL7 = -1;
+    if (layer == 7) {
+        DWORD now = GetTickCount();
+        if (anim == -1 && lastL7 >= 700 && lastL7 < 800) g_rollEndAt = now ? now : 1;
+        else if (anim >= 0) g_rollEndAt = 0;
+        lastL7 = anim;
+    } else if (anim >= 0 && layer != 23) {
+        g_rollEndAt = 0;
+    }
+}
+
 static void* __fastcall PlayAnimDetour(void* ctx, void* out, int a3, int a4, char a5, int a6, int a7) {
+    if (ctx == g_playerAnimCtx || ctx == g_rollCtx) HangRepairOnPlayAnim(a3, a4);
     if (kDiag && a3 >= 0) LogFirstUse(a3, a4);
     if (kDiag) { EnemyProbeOnPlayAnim(ctx, a3, a4); }
+    ArtoriasOnPlayAnim(ctx, a3, a4);
     ItemUpperOnPlayAnim(ctx, out, a3, a4, a5, a6);
     // Diagnostyka: kazde zlecenie na warstwie glownej (takze koniec animacji, a3 = -1), z ctx - gracz ma ten sam ctx co skok.
     if (kDiag && (a4 == 7 || a4 == 23))
@@ -2097,6 +2305,78 @@ static void HangProbeTick(const BYTE* ctx, void* p3) {
             }
         }
     } __except (EXCEPTION_EXECUTE_HANDLER) {}
+}
+
+// --- Hang repair ([Fixes] HangRepair, all builds) -------------------------------------------------
+// The hang (plan §3): after a roll the player stands still with the stick held until a roll or a hit ends it.
+// Second captured case (2026-11-13): the action controller's flag word ActionCtrl+0x1DC (ActionCtrl =
+// *(PlayerCtrl+0x48) = PlayerCtrl+0x380, the object whose permissions +0x1A0.. and block bit 0x80000 the input
+// handler 0x396860 reads) had lost bit 0x100000, which it holds in every walking frame and in every false alarm
+// of the hang probe. The bit is the free-movement state: the watch (test 2026-11-13) shows it dropping for every
+// attack (0x2010), item use (0x90) and the fog gate (0) and coming back after them; in the hang it does not come
+// back after a roll. The watch logs every change of the bit (ER_DIAG); the repair sets it back only in the hang
+// case: within kRepairRollWindowMs after a roll / backstep with no other player animation since (g_rollEndAt),
+// frozen for kRepairAfterMs with the stick held, on the ground, bit missing.
+constexpr DWORD kMoveFlag = 0x100000;
+constexpr DWORD kRepairAfterMs = 150;
+constexpr DWORD kRepairMinGapMs = 2000;
+constexpr DWORD kRepairRollWindowMs = 5000;  // the repair only acts this long after a roll ended (g_rollEndAt)
+
+static void HangRepairTick(void* p3) {
+    static DWORD lastWord = 0xFFFFFFFFu, frozenSince = 0, repairedAt = 0, lastRepairAt = 0, mainSince = 0;
+    static int lastMain = -2;
+    static float lastX = 0.f, lastZ = 0.f;
+    DWORD now = GetTickCount();
+    if (g_mainAnim != lastMain) { lastMain = g_mainAnim; mainSince = now; }
+    BYTE* pos = ChrPosData();
+    BYTE* action = nullptr;
+    DWORD word = 0;
+    float x = 0.f, z = 0.f;
+    bool ground = false;
+    __try {
+        action = *reinterpret_cast<BYTE**>(static_cast<BYTE*>(p3) + 0x48);
+        if (reinterpret_cast<ULONG_PTR>(action) < 0x10000 || !pos) return;
+        word = *reinterpret_cast<DWORD*>(action + 0x1DC);
+        x = *reinterpret_cast<float*>(pos + 0x10);
+        z = *reinterpret_cast<float*>(pos + 0x18);
+        ground = pos[0x32] != 0;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return;
+    }
+    float mag = sqrtf(g_axis[0] * g_axis[0] + g_axis[1] * g_axis[1]);
+    if (kDiag && lastWord != 0xFFFFFFFFu && ((word ^ lastWord) & kMoveFlag))
+        Log("[%7lu ms] move flag: ActionCtrl+0x1DC %08lX -> %08lX (main anim %d for %lu ms, hit anim %d, item anim %d, "
+            "axes %.2f %.2f, ground %d)", now - g_t0, lastWord, word, g_mainAnim, now - mainSince, g_playerDmgAnim,
+            g_itemUpperAnim, g_axis[0], g_axis[1], ground ? 1 : 0);
+    lastWord = word;
+    float step = sqrtf((x - lastX) * (x - lastX) + (z - lastZ) * (z - lastZ));
+    lastX = x;
+    lastZ = z;
+    if (repairedAt && step > 0.01f && step < 1.0f) {
+        Log("[%7lu ms] hang repair: moving again %lu ms after the repair", now - g_t0, now - repairedAt);
+        repairedAt = 0;
+    } else if (repairedAt && now - repairedAt > 600) {
+        Log("[%7lu ms] hang repair: still not moving 600 ms after the repair (flag %08lX, main anim %d)", now - g_t0,
+            word, g_mainAnim);
+        repairedAt = 0;
+    }
+    bool afterRoll = g_rollEndAt && now - g_rollEndAt < kRepairRollWindowMs;
+    bool frozen = afterRoll && !(word & kMoveFlag) && mag > 0.5f && g_mainAnim == -1 && g_playerDmgAnim == -1 &&
+                  g_itemUpperAnim == -1 && !g_airAtkMoveLock && ground && step < 0.004f;
+    if (!frozen) { frozenSince = 0; return; }
+    if (!frozenSince) frozenSince = now ? now : 1;
+    if (!g_hangRepairOn || now - frozenSince < kRepairAfterMs || (lastRepairAt && now - lastRepairAt < kRepairMinGapMs)) return;
+    __try {
+        *reinterpret_cast<DWORD*>(action + 0x1DC) = word | kMoveFlag;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return;
+    }
+    lastWord = word | kMoveFlag;
+    Log("[%7lu ms] hang repair: ActionCtrl+0x1DC %08lX -> %08lX after %lu ms frozen (no body animation for %lu ms, "
+        "axes %.2f %.2f)", now - g_t0, word, word | kMoveFlag, now - frozenSince, now - mainSince, g_axis[0], g_axis[1]);
+    repairedAt = lastRepairAt = now ? now : 1;
+    frozenSince = 0;
+    g_rollEndAt = 0;
 }
 
 // --- EKSPERYMENT: odblokowanie ruchu w trakcie picia ----------------------------------------

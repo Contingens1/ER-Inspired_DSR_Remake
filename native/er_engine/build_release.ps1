@@ -2,9 +2,13 @@
 #   dist\release\ER-Inspired_DSR_Remake_v<Version>\  and  dist\release\ER-Inspired_DSR_Remake_v<Version>.zip
 # Contents: release DLL (/DER_DIAG=0, no diagnostics), game files for Mod Engine 2, the end-user setup tool
 # (Setup.bat + setup\Setup.ps1; called "Konfiguracja" in the UI - it installs nothing) and README. No third-party DLLs are bundled.
-# Usage: powershell -ExecutionPolicy Bypass -File native\er_engine\build_release.ps1 [-Version 1.1] [-SkipInstallerTest]
+# Since 1.3 the Artorias boss rework (dev package dist\mods\bossy_nightreign\files_c4100_v2, docs\PLAN_PROJEKTU.md
+# section 6a) ships inside files\: its anibnd and map AI script are added, and its GameParam (= the main mod's
+# GameParam + the boss rows, built by tools\artorias_phase2.py) replaces the main one. The DLL turns the boss
+# logic on when files\chr\c4100.anibnd.dcx is present ([Bosses] ArtoriasPhase2=2).
+# Usage: powershell -ExecutionPolicy Bypass -File native\er_engine\build_release.ps1 [-Version 1.3] [-SkipInstallerTest]
 param(
-    [string]$Version = '1.2',
+    [string]$Version = '1.3',
     [string]$Repo = 'Contingens1/ER-Inspired_DSR_Remake',   # GitHub repo whose latest release setup\Update.ps1 checks
     [switch]$SkipInstallerTest
 )
@@ -15,6 +19,8 @@ $name = "${fileBase}_v$Version"
 $out = Join-Path $root "dist\release\$name"
 $mh = 'C:\Users\nemos\workspace\toolsy\minhook'
 $dev = Join-Path $root 'dist\mods\c0000_er_engine'
+$devBoss = Join-Path $root 'dist\mods\bossy_nightreign\files_c4100_v2'
+$bossFiles = @('chr\c4100.anibnd.dcx', 'script\m12_01_00_00.luabnd.dcx', 'param\GameParam\GameParam.parambnd.dcx')
 $devModEngine2 = 'C:\Users\nemos\workspace\toolsy\ModEngine2'   # only for the installer test at the end
 # DarkSoulsRemastered.exe the hooks were made for (docs\PLAN_PROJEKTU.md, section 3). The setup tool compares it.
 $exeSha256 = 'A45AAA36DD2F6CC151670A639EA5547043CF38EA79FF4178B963C6ED71F98D7B'
@@ -39,12 +45,29 @@ if ($dllText.Contains('===== ZNACZNIK')) { throw 'Release DLL contains diagnosti
 Copy-Item "$dev\bin\er_engine.ini" "$out\bin\"
 # [Update] is read only by setup\Update.ps1 (the DLL ignores it); add it if the dev ini does not have it.
 $iniText = [IO.File]::ReadAllText("$out\bin\er_engine.ini")
-if ($iniText -notmatch '(?m)^\[Update\]') {
-    $iniText = $iniText.TrimEnd() + "`r`n`r`n[Update]`r`n; 1 = the launcher checks GitHub for a newer version of the mod before every start and asks before installing it`r`n; 0 = no check`r`nCheckForUpdates=1`r`n"
-    [IO.File]::WriteAllText("$out\bin\er_engine.ini", $iniText, $utf8NoBom)
+# Sections with the DLL defaults, added when the dev ini lacks them so that users see the switches.
+$iniSections = [ordered]@{
+    'Fixes'  = "[Fixes]`r`n; 1 = after a roll the character is put back into free movement when it stands frozen with a direction held`r`n; 0 = off`r`nHangRepair=1"
+    'Bosses' = "[Bosses]`r`n; Artorias phase 2 (needs files\chr\c4100.anibnd.dcx and files\script\m12_01_00_00.luabnd.dcx from this package)`r`n; 2 = automatic: on when those files are present, 1 = on, 0 = off (Artorias then dies at 0 HP, no phase 2)`r`nArtoriasPhase2=2"
+    'Update' = "[Update]`r`n; 1 = the launcher checks GitHub for a newer version of the mod before every start and asks before installing it`r`n; 0 = no check`r`nCheckForUpdates=1"
 }
+foreach ($s in $iniSections.Keys) {
+    if ($iniText -notmatch "(?m)^\[$s\]") { $iniText = $iniText.TrimEnd() + "`r`n`r`n" + $iniSections[$s] + "`r`n" }
+}
+[IO.File]::WriteAllText("$out\bin\er_engine.ini", $iniText, $utf8NoBom)
 Copy-Item "$dev\files\*" "$out\files\" -Recurse
 if (-not (Test-Path "$out\files\chr\c0000.esd.dcx")) { throw 'files\chr\c0000.esd.dcx is missing in the dev mod folder.' }
+
+# Artorias boss files. The boss GameParam is built from the main mod's GameParam (lock-on camera) by
+# tools\artorias_phase2.py; an older one would drop newer changes of the main GameParam.
+$mainParam = Get-Item "$dev\files\param\GameParam\GameParam.parambnd.dcx"
+$bossParam = Get-Item "$devBoss\param\GameParam\GameParam.parambnd.dcx"
+if ($bossParam.LastWriteTime -lt $mainParam.LastWriteTime) { throw 'Boss GameParam is older than the main one - rerun tools\artorias_phase2.py.' }
+foreach ($f in $bossFiles) {
+    if (-not (Test-Path "$devBoss\$f")) { throw "Boss file missing: $devBoss\$f" }
+    New-Item -ItemType Directory -Force (Split-Path "$out\files\$f") | Out-Null
+    Copy-Item "$devBoss\$f" "$out\files\$f" -Force
+}
 
 # 3. Mod Engine 2 config. Paths are relative to the file, so it works wherever the folder is unpacked.
 #    The setup tool writes the same file again together with the launcher .bat (which needs the ME2 path).

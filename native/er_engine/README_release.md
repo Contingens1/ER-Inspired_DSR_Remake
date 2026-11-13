@@ -1,6 +1,6 @@
 ﻿# ER-Inspired DSR Remake v{VERSION} — Dark Souls Remastered
 
-Ruch, uniki, skok i picie estusa w stylu Elden Ringa w Dark Souls Remastered.
+Ruch, uniki, skok i picie estusa w stylu Elden Ringa w Dark Souls Remastered. Od 1.3 także pierwszy przerobiony boss: Rycerz Artorias z drugą fazą i atakami z Nightreign.
 
 ## Wymagania
 
@@ -44,6 +44,20 @@ Aktualizacja zmienia wyłącznie pliki w folderze moda — nie dotyka gry ani Mo
 - **Graj wyłącznie offline.** Mod zmienia działanie gry w pamięci — gra online grozi banem. Mod nie ma własnej blokady sieci; przed uruchomieniem przełącz Steama w tryb offline albo ustaw w grze start w trybie offline.
 - Na innej wersji `DarkSoulsRemastered.exe` hooki się nie założą i mechaniki z DLL nie będą działać (log: `bin\er_engine.log`).
 
+## Nowe w 1.3
+
+- **Rycerz Artorias — przerobiona walka z drugą fazą** (sekcja „Artorias”). Wczesna wersja: efekty drugiej fazy (dym na mieczu, iskry przed uderzeniem, wybuch przy lądowaniu skoków) są jeszcze do sprawdzenia i dopracowania.
+- **Darmowy sprint:** wróg, który już walczy z graczem (goni go albo atakuje) w promieniu 40 m, też wyłącza darmowy sprint — nawet bez namierzenia i bez trafienia.
+- **Zawieszenie po przewrocie:** gdy postać po przewrocie stoi w miejscu mimo wciśniętego kierunku, mod przywraca jej swobodny ruch (`HangRepair`, sekcja „Ustawienia”). Naprawa na podstawie dwóch zarejestrowanych przypadków — jeszcze nie sprawdzona na prawdziwym zawieszeniu.
+
+## Artorias *(nowe w 1.3, wczesna wersja)*
+
+- **Faza 1** — tylko ataki z Dark Souls, bez wzmocnienia; krótsza niż oryginalna walka.
+- **Przejście** — gdy pasek HP spadnie do zera, Artorias nie ginie: klęka w animacji wzmocnienia (nie da się jej przerwać ani zadać obrażeń), odnawia całe HP i kończy wybuchem oraz dwoma pierścieniami mrocznych kul.
+- **Faza 2** — wzmocnienie na stałe (mocniejsze ciosy) i nowe ataki przeniesione z Elden Ring Nightreign: długie combo, szarże z cięciem, dwa wielkie skoki pod rząd, salta zakończone skokiem z ciosem z góry; skoki kończą się małym mrocznym wybuchem przy uderzeniu w ziemię.
+- Obie fazy mają razem ok. 1,2× HP oryginalnego Artoriasa. Po zabiciu w fazie 2 Artorias daje swoją duszę bossa; dusze pojawiają się z kilkusekundowym opóźnieniem.
+- Wyłączenie drugiej fazy: `ArtoriasPhase2=0` w `bin\er_engine.ini` (ataki z Nightreign zostają w plikach, ale bez przejścia Artorias ginie przy 0 HP).
+
 ## Nowe w 1.2
 
 - **Aktualizacje z poziomu launchera** (sekcja „Aktualizacje”).
@@ -82,6 +96,8 @@ Aktualizacja zmienia wyłącznie pliki w folderze moda — nie dotyka gry ani Mo
 - `LockOnSprint=1` — przy namierzeniu przewrót przy puszczeniu klawisza (`0` = jak w DSR: przewrót w bok i w tył od razu przy wciśnięciu),
 - `FreeOutOfCombat=1` (sekcja `[Stamina]`) — poza walką sprint nie zużywa wytrzymałości; przewroty, skoki i ataki kosztują zawsze (`0` = jak w DSR). „Walka" = namierzony cel, utrata HP w ostatnich 8 s albo atak bronią w ostatnich 5 s.
 - `HitCancelsItem=1` (sekcja `[Items]`) — reakcja na trafienie przerywa picie estusa / użycie przedmiotu (`0` = wyłączone; flaszka potrafi wtedy zostać w ręce przy powaleniu),
+- `HangRepair=1` (sekcja `[Fixes]`) — naprawa zawieszenia po przewrocie (`0` = wyłączona),
+- `ArtoriasPhase2=2` (sekcja `[Bosses]`) — druga faza Artoriasa: `2` = automatycznie (włączona, gdy w paczce są pliki bossa), `1` = włączona, `0` = wyłączona,
 - `CheckForUpdates=1` (sekcja `[Update]`) — sprawdzanie nowej wersji przy uruchomieniu (`0` = wyłączone).
 
 ## Znane ograniczenia
@@ -89,8 +105,8 @@ Aktualizacja zmienia wyłącznie pliki w folderze moda — nie dotyka gry ani Mo
 - Ataki z wyskoku: przy dotknięciu ziemi widać lekkie szarpnięcie postaci i mały przeskok animacji. Katana używa animacji miecza zakrzywionego, a zwykły atak toporem — animacji młota (brak przeliczonych animacji ER dla tych grup). Młoty nie mają R2 z wyskoku, pięści nie mają ataków z wyskoku wcale. Przy bardzo długim upadku zamach kończy się w powietrzu i dalej leci zwykłe spadanie.
 - Sprint przy namierzonym celu działa tylko w przód (jak w DSR); w bok i w tył postać idzie krokiem.
 - Przy piciu w marszu broń w ręce chwilę miga. Kosmetyczne.
-- Darmowy sprint: walka jest wykrywana w uproszczeniu — wróg, który goni gracza, ale jeszcze nie trafił i nie jest namierzony, nie wyłącza darmowego sprintu.
-- Sporadycznie postać potrafi „zawisnąć” bez animacji (stoi mimo wciśniętego kierunku) do następnego trafienia lub akcji. Przyczyna jeszcze nieustalona.
+- Sporadycznie postać potrafi „zawisnąć” bez animacji (stoi mimo wciśniętego kierunku) do następnego trafienia lub akcji. Od 1.3 przypadek po przewrocie jest naprawiany automatycznie (`HangRepair`); jeśli zawieszenie nadal się zdarza, zgłoś je.
+- Artorias (wczesna wersja): efekty drugiej fazy do sprawdzenia — dym na mieczu może być słabo widoczny, wielkość wybuchu przy skokach jeszcze strojona. Przejście do drugiej fazy potrafi ruszyć z opóźnieniem do ok. 3 s, jeśli Artorias jest w środku serii ciosów. Balans sprawdzany tylko na NG+.
 - Lekkie ślizganie przy lądowaniu po skoku; z bronią ręce przeskakują do innej pozy przy przejściu skok → spadanie.
 - Blok tarczą w sprincie wygląda nienaturalnie (animacja sprintu z ER).
 - Unik kończący się na ścianie przy namierzeniu potrafi sporadycznie zawiesić postać w pozie do następnej akcji.
@@ -99,6 +115,7 @@ Aktualizacja zmienia wyłącznie pliki w folderze moda — nie dotyka gry ani Mo
 
 - **Player Animations Repository** (Nexus Mods, DSR #748) — animacje Elden Ringa przeniesione na szkielet DSR, użyte w plikach `files\chr\*.anibnd.dcx`. **Nie publikuj tej paczki dalej bez zgody autorów tego repozytorium.**
 - **DSROmniRoll** (Nexus Mods, DSR #1378) i **Simple Estus Walking** — pomysły, na których wzorowane są własne implementacje przewrotu we wszystkie strony i picia w ruchu. Ich pliki nie są częścią tej paczki.
+- **Elden Ring Nightreign** (FromSoftware) — animacje ataków Artoriasa drugiej fazy przeniesione na jego szkielet z DSR (`files\chr\c4100.anibnd.dcx`).
 - **Mod Engine 2** (soulsmods) — ładowanie modów (nie jest dołączony).
 - **MinHook** (Tsuda Kageyu) — biblioteka hooków wkompilowana w `er_engine.dll`.
 
