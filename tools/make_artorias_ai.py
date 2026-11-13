@@ -81,13 +81,13 @@ PHASE2_WEIGHTS = f'''    if targetDist < 3 and actPerArr[7] == 0 and actPerArr[1
             if 9 <= targetDist then
                 actPerArr[14] = 0
             elseif 7 <= targetDist then
-                actPerArr[14] = 20
+                actPerArr[14] = 30
             elseif 5 <= targetDist then
-                actPerArr[14] = 25
+                actPerArr[14] = 35
             elseif 3 <= targetDist then
-                actPerArr[14] = 20
+                actPerArr[14] = 30
             else
-                actPerArr[14] = 10
+                actPerArr[14] = 20
             end
         else
             actPerArr[5] = 0
@@ -125,16 +125,18 @@ def main() -> int:
     # Act03: 3004 -> 3024 (NR 3033)
     t = sub_once(t, "    goal:AddSubGoal(GOAL_COMMON_Attack, 10, 3004, TARGET_ENE_0, AttDist, 0)\n",
                  f"    if ai:GetHpRate(TARGET_SELF) <= {PHASE2} and ai:GetRandam_Int(1, 100) <= 60 then\n"
-                 "        goal:AddSubGoal(GOAL_COMMON_ComboAttackTunableSpin, 10, 3004, TARGET_ENE_0, AttDist, 0, 90)\n"
-                 "        goal:AddSubGoal(GOAL_COMMON_ComboFinal, 10, 3024, TARGET_ENE_0, 12, 0)\n"
+                 # success angle 180 / no distance limit: 3004 travels 11 m and usually ends beside the player,
+                 # with the stock 90-degree check the follow-up was dropped (1 of 6 in the test log)
+                 "        goal:AddSubGoal(GOAL_COMMON_CommonAttack, 10, 3004, TARGET_ENE_0, 999, 180, 0, 90, true, true, false, false, 0, 0)\n"
+                 "        goal:AddSubGoal(GOAL_COMMON_ComboFinal, 10, 3024, TARGET_ENE_0, 999, 0)\n"
                  "    else\n"
                  "        goal:AddSubGoal(GOAL_COMMON_Attack, 10, 3004, TARGET_ENE_0, AttDist, 0)\n"
                  "    end\n")
     # Act04: 3007 -> 3025 (NR 3034)
     t = sub_once(t, "    if fate <= 70 then\n        goal:AddSubGoal(GOAL_COMMON_AttackTunableSpin, 10, 3007, TARGET_ENE_0, AttDist, -1, 25)\n",
                  f"    if ai:GetHpRate(TARGET_SELF) <= {PHASE2} and fate <= 55 then\n"
-                 "        goal:AddSubGoal(GOAL_COMMON_ComboAttackTunableSpin, 10, 3007, TARGET_ENE_0, AttDist, -1, 25)\n"
-                 "        goal:AddSubGoal(GOAL_COMMON_ComboFinal, 10, 3025, TARGET_ENE_0, 8, 0)\n"
+                 "        goal:AddSubGoal(GOAL_COMMON_CommonAttack, 10, 3007, TARGET_ENE_0, 999, 180, 1.5, 25, true, true, false, false, 0, 0)\n"
+                 "        goal:AddSubGoal(GOAL_COMMON_ComboFinal, 10, 3025, TARGET_ENE_0, 999, 0)\n"
                  "    elseif fate <= 70 then\n"
                  "        goal:AddSubGoal(GOAL_COMMON_AttackTunableSpin, 10, 3007, TARGET_ENE_0, AttDist, -1, 25)\n")
     # Act05: 3027 -> 3028 instead of the plain charge
