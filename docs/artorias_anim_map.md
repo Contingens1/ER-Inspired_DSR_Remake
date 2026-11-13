@@ -1,6 +1,6 @@
 # Mapa animacji Artoriasa (DSR c4100 + Nightreign c7720)
 
-Stan 2026-11-13. Dotyczy paczki `dist\mods\bossy_nightreign\files_c4100_v2` (`launch_nr_artorias_v2.bat`). Zmiany w paczce lub AI → poprawić tę mapę.
+Stan 2026-11-14. Dotyczy paczki `dist\mods\bossy_nightreign\files_c4100_v2` (`launch_nr_artorias_v2.bat`). Zmiany w paczce lub AI → poprawić tę mapę.
 
 **Jak czytać:** „oglądane" = obejrzane jako arkusz póz szkieletu (`work\boss_views\*.png`); „z liczb" = opis wywnioskowany z ruchu postaci, czasów trafień i AI, bez oglądania. Gracz rozpoznaje ruchy po wyglądzie, nie po numerach — w rozmowie zawsze podawać opis obok ID.
 
@@ -25,7 +25,7 @@ Stan 2026-11-13. Dotyczy paczki `dist\mods\bossy_nightreign\files_c4100_v2` (`la
 | 3012 | **pchnięcie lewą ręką** — z lewej dłoni wylatuje wachlarz 18 krótkich (3 m) ciemnych pocisków (`41500`) | DS1 | — | z parametrów |
 | 3013 | **buff**: przysiad z mieczem nad ramieniem, ~5 s ładowania, przy 5,40 s wyprostowanie i ciemny wybuch (pocisk `41510`, promień 7 m), powrót do postawy | DS1 | od etapu 1 wyłączony (akcja 12) | oglądane. Mechanika: zdarzenie TAE 401 przy 0,07 s daje 5511 (4,8 s: przyjmuje 50% obrażeń, odporność na przerwanie −40 — dlatego da się go przerwać); wybuch nakłada 5510 (60 s: ataki ×1,5, obrażenia wytrzymałości ×1,35). Log 13.11: przerwany po 5,97 s z 8,0 |
 | 3014 | cięcie w dół z krokiem ~2,5 m (zachowanie „cięcie 3") | DS1 | zwykły | z liczb |
-| 3016 | **przejście do fazy 2** = ruch buffa 3013 (ta sama animacja): na starcie SpEffect 5512 (0% obrażeń, leczenie do pełna), odporność na przerwanie przez całą animację, przy 5,40 s wybuch `41520` nakłada 5513 (faza 2) i TAE 401 daje 5514 + zdarzenie typu 100 (dym 13910 na mieczu), przy 5,43 i 5,70 s dwa pierścienie po 12 kul Dark Bead (41540 / 41541) z dummypoly 8 | nasz (`tools\artorias_phase2.py`) | akcja 16 / przerwanie przy HP ≤ 1% | od etapu 1; kule i aura od etapu 2 (NIE testowane) |
+| 3016 | **przejście do fazy 2** = ruch buffa 3013 (ta sama animacja): na starcie SpEffect 5512 (0% obrażeń, leczenie do pełna), odporność na przerwanie przez całą animację, przy 5,40 s wybuch `41520` nakłada 5513 (faza 2, bez aury na ciele) i TAE 401 daje 5531–5533 (gęsta aura 845 na czubku, za czubkiem i na środku ostrza do końca walki), przy 5,43 i 5,70 s dwa pierścienie po 12 kul Dark Bead (41540 / 41541) z dummypoly 8 | nasz (`tools\artorias_phase2.py`) | akcja 16 / koniec fazy 1 sprawdzany w `Update` AI | przetestowane 2026-11-14: przejście 1,5 s po 1 HP, aura na mieczu widoczna, kule trafiają |
 | 3020 / 3021 | obrót w miejscu w lewo / prawo | DS1 | — | brak własnego HKX w `dsr_c4100` |
 | 3023 | **pchnięcie** z krokiem ~3 m | DS1 | akcja 13 | z liczb |
 | 3017 | **szarża** ~11,5 m prosto na gracza z cięciem na końcu (1,77 s) | NR 3030 | akcja 14: 3017 → 3018 → 3019 („najdłuższe combo", ~13 s) | skrócone ×0,45, wyprostowane, celuje obrót |
@@ -33,9 +33,9 @@ Stan 2026-11-13. Dotyczy paczki `dist\mods\bossy_nightreign\files_c4100_v2` (`la
 | 3019 | uderzenie z góry (0,53 s), przysiad, długi wypad ~8–10 m z mieczem przy ziemi z obrotem o 180°, trafienie 2,00–2,37 s | NR 3032 | koniec łańcucha | oglądane; ×0,6, okno trafienia od 2,00 s |
 | 3024 | szarża ~11 m z cięciem (1,77 s) | NR 3033 | po 3004 | ×0,5, wyprostowane |
 | 3025 | doskok ~6 m z dwoma cięciami | NR 3034 | po 3007 | wyprostowane |
-| 3026 | **cięcie → wysoki skok w bok (~10 m w bok, 7,5 m w przód) → skok na gracza z ciosem z góry i mieczem w ziemi** (3,13 s) | NR 3026 | w NR fazie 2: 3003 → [3009] → 3026 | od 2026-11-13 **włączony w fazie 2**, skok na gracza wydłużony z ~3,6 do ~9,5 m (`--rm-scale-window 1003026:2.83:3.17:2.65`; w NR rozciągany do celu 2,5–15 m); test 2026-11-13: dolatuje (6–7 m przed skokiem → 1,25 m przy uderzeniu); od etapu 2: iskry z końca ostrza 1,90–3,20 s, mały wybuch 41530 przy 3,20 s; w NR pocisk-wybuch 465 przy lądowaniu |
-| 3027 | **pierwszy z dwóch wielkich skoków** (NR-owa wersja 3005, miednica do 5,9 m, ~15 m) z uderzeniem przy lądowaniu | NR 3027 | zamiast 3005 → 3028 | w NR + wybuch 475 przy lądowaniu + atak chwytu `(70, 6, 940)`; u nas od etapu 2: iskry z końca ostrza 0,50–2,43 s i mały wybuch 41530 (2,5 m) przy 2,43 s zamiast niewidocznego obszaru 180; chwytu brak |
-| 3028 | **drugi wielki skok** (miednica do 5,9 m, ~6,7 m) z uderzeniem przy lądowaniu | NR 3028 | po 3027 | ×0,6; w NR + wybuch 485 + atak chwytu `(70, 6, 940)`; u nas od etapu 2: iskry 0,13–1,83 s, mały wybuch 41530 przy 1,83 s |
+| 3026 | **cięcie → wysoki skok w bok (~10 m w bok, 7,5 m w przód) → skok na gracza z ciosem z góry i mieczem w ziemi** (3,13 s) | NR 3026 | w NR fazie 2: 3003 → [3009] → 3026 | włączony w fazie 2, skok na gracza wydłużony z ~3,6 do ~9,5 m (`--rm-scale-window 1003026:2.83:3.17:2.65`), dolatuje; od 14.11: iskry z czubka co 0,05 s od 2,50 s, przy 3,20 s uderzenie w ziemię 13912, 0,1 s później rozbłysk 20206 + dźwięk + wybuch 2 m (41532) na środku ostrza (dummypoly 21); dźwięki lądowania skopiowane z 3027 (port ich nie dał); w NR pocisk-wybuch 465 z dummypoly 12 |
+| 3027 | **pierwszy z dwóch wielkich skoków** (NR-owa wersja 3005, miednica do 5,9 m, od 14.11 ~12 m: port ×0,8) z uderzeniem przy lądowaniu (miecz wbity pionowo ~1,3 m przed bossem) | NR 3027 | zamiast 3005 → 3028 | w NR + wybuch 475 + atak chwytu `(70, 6, 940)`; u nas: odbicie 1,45 s, szczyt 1,9 s, iskry od 1,80 s, uderzenie 2,43 s, wybuch jak w 3026 (2,53 s); bez obszaru 180 z 3005; chwytu brak |
+| 3028 | **drugi wielki skok** (miednica do 5,9 m, ~6,7 m) z uderzeniem przy lądowaniu (miecz wbity pionowo ~1,6 m przed bossem) | NR 3028 | po 3027 | ×0,6; w NR + wybuch 485 + atak chwytu `(70, 6, 940)`; u nas: odbicie 0,75 s, szczyt 1,3 s, iskry od 1,20 s, uderzenie 1,83 s, wybuch jak w 3026 (1,93 s) |
 
 ### Tylko w NR (nieprzeniesione)
 

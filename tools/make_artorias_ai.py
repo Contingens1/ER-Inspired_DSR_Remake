@@ -19,7 +19,8 @@ Phases (player's decisions 2026-11-13, docs/PLAN_PROJEKTU.md §6a):
 
 New animation numbers stay inside 3000-3029, the range enemyCommon.esd accepts.
 
-  python tools/make_artorias_ai.py            # writes the .lua and builds the luabnd into the test package
+  python tools/make_artorias_ai.py            # writes the .lua and builds the luabnd into files_c4100_v2
+  python tools/make_artorias_ai.py --tag _v2_test   # same for the test package files_c4100_v2_test
 """
 from __future__ import annotations
 
@@ -152,7 +153,35 @@ INTERRUPT_TRANSITION = f'''    if hprate <= {TRANSITION_HP} and {P2} == false an
 '''
 
 
-def main() -> int:
+# (mod, --hp-update) The interrupt handler only runs on events; a killing blow that lands while the next combo part
+# is already queued was seen there with the HP from before the hit (test 2026-11-13: transition 3.1 s late). With
+# Update switched on (no REGISTER_GOAL_NO_UPDATE, as the crystal lizard's Runaway goal) the end of phase 1 is
+# checked on every update; the goal ends when its subgoals are done, the pattern of the common If goal.
+UPDATE_HP = f'''function Artorius410000Battle_Update(ai, goal)
+    if ai:GetHpRate(TARGET_SELF) <= {TRANSITION_HP} and {P2} == false and ai:GetNumber(5) == 0 then
+        ai:SetNumber(5, 1)
+        goal:ClearSubGoal()
+        goal:AddSubGoal(GOAL_COMMON_AttackTunableSpin, 12, 3016, TARGET_ENE_0, DIST_None, 0, 90)
+        return GOAL_RESULT_Continue
+    end
+    if goal:GetSubGoalNum() <= 0 then
+        return GOAL_RESULT_Success
+    end
+    return GOAL_RESULT_Continue
+end
+'''
+
+
+def main(argv=None) -> int:
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--tag", default="_v2", help="package folder files_c4100<tag> (test packages: _v2_test)")
+    # tested 13.11 (test package): transition 1.5 s after 1 HP (the boss finished the super-armoured 3000), no stall
+    ap.add_argument("--no-hp-update", dest="hp_update", action="store_false",
+                    help="old behaviour: end of phase 1 only from the interrupt handler (see UPDATE_HP)")
+    args = ap.parse_args(argv)
+    out_lua = OUT_LUA.with_name(f"410000_battle.nr{args.tag}.lua")
+    out_bnd = ROOT / "dist" / "mods" / "bossy_nightreign" / f"files_c4100{args.tag}" / "script" / OUT_BND.name
     t = SRC.read_text(encoding="shift_jis")
     t = re.sub(r"(?<=\d),(?=\d)", ".", t)  # the decompiler prints decimals with the Polish locale comma
     t, n = re.subn(
@@ -262,13 +291,17 @@ def main() -> int:
     t = t.replace(far, "Artorius410000_FarLeap(ai, goal)")
     t = sub_once(t, "function Artorius410000_Act20(ai, goal, paramTbl)\n",
                  HELPER + FAR_LEAP + "function Artorius410000_Act20(ai, goal, paramTbl)\n")
+    if args.hp_update:
+        t = sub_once(t, "REGISTER_GOAL_NO_UPDATE(GOAL_Artorius410000_Battle, 1)\n", "")
+        t = sub_once(t, "function Artorius410000Battle_Update(ai, goal)\n    return GOAL_RESULT_Continue\nend\n", UPDATE_HP)
+        print("Update: end of phase 1 checked on every update")
     if re.search(r"\d,\d", t):
         raise RuntimeError("decimal comma left in the script")
-    OUT_LUA.write_text(t, encoding="shift_jis", newline="\n")
-    print(f"written {OUT_LUA} ({len(t.splitlines())} lines)")
-    OUT_BND.parent.mkdir(parents=True, exist_ok=True)
+    out_lua.write_text(t, encoding="shift_jis", newline="\n")
+    print(f"written {out_lua} ({len(t.splitlines())} lines)")
+    out_bnd.parent.mkdir(parents=True, exist_ok=True)
     return subprocess.call([sys.executable, str(ROOT / "tools" / "ai_lua.py"), "build", "m12_01_00_00",
-                            "410000_battle.lua", str(OUT_LUA), str(OUT_BND)])
+                            "410000_battle.lua", str(out_lua), str(out_bnd)])
 
 
 if __name__ == "__main__":
