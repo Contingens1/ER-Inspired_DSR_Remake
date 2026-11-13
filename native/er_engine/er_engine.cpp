@@ -7,6 +7,7 @@
 #include <share.h>
 #include <string>
 #include <cmath>
+#include <cfloat>
 #include <vector>
 #include <xinput.h>
 #include "MinHook.h"
@@ -255,6 +256,7 @@ static void AttackSpeedTick(float dt);  // nizej, czasy atakow z ER
 static void AirControlTick(float dt);   // nizej, sterowanie w locie
 static void AirControlOnPlayAnim(int anim, int layer);
 static void PhysProbeTick();            // nizej, sonda fizyki skoku (tylko odczyt)
+static void EnemyProbeTick();           // below: enemy attack probe (read-only, ER_DIAG)
 static void AirMomentumTick(float dt);  // nizej, rozped w spadaniu po skoku
 static void AirMomentumStart(int anim);
 static void AirMomentumOnOtherAnim();
@@ -749,7 +751,7 @@ static void __fastcall InputDetour(void* ctx, float dt, void* p3) {
     AttackSpeedTick(dt);
     AirControlTick(dt);
     AirMomentumTick(dt);
-    if (kDiag) PhysProbeTick();
+    if (kDiag) { PhysProbeTick(); EnemyProbeTick(); }
     AirAttackTick(dt);
     if (kDiag) {  // F8 = znacznik w logu (podzial testu na kroki)
         static bool f8 = false;
@@ -929,8 +931,106 @@ static void AttackSpeedTick(float dt) {
     g_atkTime += dt * s;
 }
 
+// --- Enemy attack probe (ER_DIAG only, read-only) ---------------------------------------------
+// Boss tuning: distance and bearing between an enemy and the player while the enemy plays an attack
+// (3000-3099 on layer 7), sampled every kEnemyProbeStepMs until the attack ends. Owner of a PlayAnim ctx
+// = *(ctx+0x10) (FUN_14037A040 makes its virtual calls through it); position data as for the player:
+// owner+0x68 -> +0x28 (+0x04 yaw, +0x10/+0x14/+0x18 X/Y/Z). Not verified for enemies before this probe:
+// the player's own ctx is compared with ChrPosData() once and the result is logged.
+// Bearing = angle from the enemy's facing to the player (0 = straight ahead); which side is positive is
+// not established yet.
+struct EnemyProbe { void* ctx; int anim; DWORD startAt, lastAt; float x0, z0; };
+static EnemyProbe g_enemyProbe[4] = {};
+constexpr DWORD kEnemyProbeStepMs = 100, kEnemyProbeMaxMs = 6000;
+
+static BYTE* PosDataOfAnimCtx(void* ctx) {
+    __try {
+        auto owner = *reinterpret_cast<BYTE**>(static_cast<BYTE*>(ctx) + 0x10);
+        if (reinterpret_cast<ULONG_PTR>(owner) < 0x10000) return nullptr;
+        auto map = *reinterpret_cast<BYTE**>(owner + 0x68);
+        if (reinterpret_cast<ULONG_PTR>(map) < 0x10000) return nullptr;
+        auto pos = *reinterpret_cast<BYTE**>(map + 0x28);
+        return reinterpret_cast<ULONG_PTR>(pos) < 0x10000 ? nullptr : pos;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+}
+
+static int PlayerHpForProbe() {
+    __try {
+        auto base = reinterpret_cast<BYTE*>(GetModuleHandleA(nullptr));
+        auto worldChr = *reinterpret_cast<BYTE**>(base + 0x1C77E50);
+        auto player = worldChr ? *reinterpret_cast<BYTE**>(worldChr + 0x68) : nullptr;
+        return player ? *reinterpret_cast<int*>(player + 0x3E8) : -1;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return -1;
+    }
+}
+
+// Returns false when the positions cannot be read (slot is then dropped by the caller).
+static bool EnemyProbeLog(EnemyProbe& p, DWORD now, const char* tag) {
+    BYTE* e = PosDataOfAnimCtx(p.ctx);
+    BYTE* pl = ChrPosData();
+    if (!e || !pl || e == pl) return false;
+    float ex, ey, ez, yaw, px, py, pz;
+    __try {
+        yaw = *reinterpret_cast<float*>(e + 0x04);
+        ex = *reinterpret_cast<float*>(e + 0x10); ey = *reinterpret_cast<float*>(e + 0x14); ez = *reinterpret_cast<float*>(e + 0x18);
+        px = *reinterpret_cast<float*>(pl + 0x10); py = *reinterpret_cast<float*>(pl + 0x14); pz = *reinterpret_cast<float*>(pl + 0x18);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    if (!_finite(yaw) || !_finite(ex) || !_finite(ey) || !_finite(ez) || fabsf(ex) > 1e5f || fabsf(ez) > 1e5f || fabsf(yaw) > 100.f)
+        return false;
+    if (p.lastAt == 0) { p.x0 = ex; p.z0 = ez; }
+    float dx = px - ex, dz = pz - ez;
+    float fx = -sinf(yaw), fz = -cosf(yaw);  // forward, same convention as the player (PLAN section 3)
+    float bearing = atan2f(fx * dz - fz * dx, fx * dx + fz * dz) * 57.29578f;
+    float moved = sqrtf((ex - p.x0) * (ex - p.x0) + (ez - p.z0) * (ez - p.z0));
+    Log("[%7lu ms] enemy %p anim %d +%4lu ms%s: dist %.2f m, bearing %+.0f deg, moved %.2f m, dy %+.2f, yaw %.2f, player hp %d",
+        now - g_t0, p.ctx, p.anim, now - p.startAt, tag, sqrtf(dx * dx + dz * dz), bearing, moved, py - ey, yaw,
+        PlayerHpForProbe());
+    p.lastAt = now ? now : 1;
+    return true;
+}
+
+static void EnemyProbeOnPlayAnim(void* ctx, int anim, int layer) {
+    if (layer != 7 || !ctx) return;
+    if (ctx == g_playerAnimCtx || ctx == g_rollCtx) {
+        static bool checked = false;
+        if (!checked && ctx == g_playerAnimCtx && ChrPosData()) {
+            checked = true;
+            Log("[%7lu ms] enemy probe: player ctx+0x10 path %s ChrPosData()", GetTickCount() - g_t0,
+                PosDataOfAnimCtx(ctx) == ChrPosData() ? "matches" : "DOES NOT match");
+        }
+        return;
+    }
+    DWORD now = GetTickCount();
+    EnemyProbe* slot = nullptr;
+    for (auto& p : g_enemyProbe) if (p.ctx == ctx) slot = &p;
+    if (slot) {  // any new request on layer 7 (also -1) ends the tracked attack
+        EnemyProbeLog(*slot, now, " END");
+        slot->ctx = nullptr;
+    }
+    if (anim < 3000 || anim > 3099) return;
+    if (!slot) for (auto& p : g_enemyProbe) if (!p.ctx) { slot = &p; break; }
+    if (!slot) return;
+    *slot = {ctx, anim, now, 0, 0.f, 0.f};
+    if (!EnemyProbeLog(*slot, now, " START")) slot->ctx = nullptr;
+}
+
+static void EnemyProbeTick() {
+    DWORD now = GetTickCount();
+    for (auto& p : g_enemyProbe) {
+        if (!p.ctx) continue;
+        if (now - p.startAt > kEnemyProbeMaxMs) { p.ctx = nullptr; continue; }
+        if (now - p.lastAt >= kEnemyProbeStepMs && !EnemyProbeLog(p, now, "")) p.ctx = nullptr;
+    }
+}
+
 static void* __fastcall PlayAnimDetour(void* ctx, void* out, int a3, int a4, char a5, int a6, int a7) {
     if (kDiag && a3 >= 0) LogFirstUse(a3, a4);
+    if (kDiag) EnemyProbeOnPlayAnim(ctx, a3, a4);
     // Diagnostyka: kazde zlecenie na warstwie glownej (takze koniec animacji, a3 = -1), z ctx - gracz ma ten sam ctx co skok.
     if (kDiag && (a4 == 7 || a4 == 23))
         Log("[%7lu ms] L%d ctx=%p anim=%d a5=%d a6=%d a7=%d%s", GetTickCount() - g_t0, a4, ctx, a3, a5, a6, a7,
