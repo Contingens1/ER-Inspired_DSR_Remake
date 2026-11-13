@@ -1,0 +1,19 @@
+# Wypakowane zasoby z gier i narzędzia zewnętrzne
+nuxe*/
+
+# Duże pliki binarne, paczki i pliki z gier
+*.dcx
+*.bdt
+*.bhd
+*.hkx
+*.bin
+*.exe
+*.dll
+*.zip
+*.log
+
+# Foldery robocze, zrzuty pamięci i gotowe paczki
+work/
+dist/
+analysis/
+gemini/

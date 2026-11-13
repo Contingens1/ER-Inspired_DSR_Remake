@@ -1,0 +1,460 @@
+{
+  "_opis": "Mapa animacji ruchu DSR (a00_NNNN) -> ER (a000_NNNNNN z repozytorium Nexus #748, format DSR). Kierunki DSR zmierzone z root motion (tools/anim_root_motion.py): kolejnosc wg MoveParam: przod, tyl, LEWO, PRAWO (w ukladzie gry +x = lewo). Kierunki ER z nazw grafu zachowan (tools/er_anim_table.py): Front, Back, Left, Right - TA SAMA kolejnosc (wczesniejsza zamiana byla bledem, poprawione 2026-11-11). Pewnosc: 'pomiar+nazwa' = kierunek i prog potwierdzone; 'domysl' = do sprawdzenia w grze/DSAS.",
+  "rolls": [
+    {
+      "dsr": 700,
+      "er": 27100,
+      "co": "przewrot lekki, przod",
+      "pewnosc": "pomiar+nazwa"
+    },
+    {
+      "dsr": 701,
+      "er": 27101,
+      "co": "przewrot lekki, tyl",
+      "pewnosc": "pomiar+nazwa"
+    },
+    {
+      "dsr": 702,
+      "er": 27102,
+      "co": "przewrot lekki, lewo (RollLeft)",
+      "pewnosc": "pomiar+nazwa"
+    },
+    {
+      "dsr": 703,
+      "er": 27103,
+      "co": "przewrot lekki, prawo (RollRight)",
+      "pewnosc": "pomiar+nazwa"
+    },
+    {
+      "dsr": 710,
+      "er": 27110,
+      "co": "przewrot sredni, przod",
+      "pewnosc": "pomiar+nazwa"
+    },
+    {
+      "dsr": 711,
+      "er": 27111,
+      "co": "przewrot sredni, tyl",
+      "pewnosc": "pomiar+nazwa"
+    },
+    {
+      "dsr": 712,
+      "er": 27112,
+      "co": "przewrot sredni, lewo (RollLeft)",
+      "pewnosc": "pomiar+nazwa"
+    },
+    {
+      "dsr": 713,
+      "er": 27113,
+      "co": "przewrot sredni, prawo (RollRight)",
+      "pewnosc": "pomiar+nazwa"
+    },
+    {
+      "dsr": 720,
+      "er": 27120,
+      "co": "przewrot ciezki, przod",
+      "pewnosc": "pomiar+nazwa"
+    },
+    {
+      "dsr": 721,
+      "er": 27121,
+      "co": "przewrot ciezki, tyl",
+      "pewnosc": "pomiar+nazwa"
+    },
+    {
+      "dsr": 722,
+      "er": 27122,
+      "co": "przewrot ciezki, lewo (RollLeft)",
+      "pewnosc": "pomiar+nazwa"
+    },
+    {
+      "dsr": 723,
+      "er": 27123,
+      "co": "przewrot ciezki, prawo (RollRight)",
+      "pewnosc": "pomiar+nazwa"
+    },
+    {
+      "dsr": 730,
+      "er": 27130,
+      "co": "przewrot przeciazony, przod",
+      "pewnosc": "pomiar+nazwa"
+    },
+    {
+      "dsr": 731,
+      "er": 27131,
+      "co": "przewrot przeciazony, tyl",
+      "pewnosc": "pomiar+nazwa"
+    },
+    {
+      "dsr": 732,
+      "er": 27132,
+      "co": "przewrot przeciazony, lewo (RollLeft)",
+      "pewnosc": "pomiar+nazwa"
+    },
+    {
+      "dsr": 733,
+      "er": 27133,
+      "co": "przewrot przeciazony, prawo (RollRight)",
+      "pewnosc": "pomiar+nazwa"
+    }
+  ],
+  "backsteps": [
+    {
+      "dsr": 680,
+      "er": 27000,
+      "co": "backstep lekki",
+      "pewnosc": "pomiar+nazwa"
+    },
+    {
+      "dsr": 690,
+      "er": 27010,
+      "co": "backstep sredni",
+      "pewnosc": "pomiar+nazwa"
+    },
+    {
+      "dsr": 695,
+      "er": 27020,
+      "co": "backstep ciezki",
+      "pewnosc": "pomiar+nazwa"
+    },
+    {
+      "dsr": 696,
+      "er": 27030,
+      "co": "backstep przeciazony (0.5 m)",
+      "pewnosc": "pomiar+nazwa"
+    },
+    {
+      "dsr": 697,
+      "er": null,
+      "co": "backstep specjalny/najszybszy; ER Superlight (027040) brak w repozytorium - zostaje DSR",
+      "pewnosc": "brak"
+    }
+  ],
+  "bez_odpowiednika": [
+    {
+      "dsr": "735-738",
+      "co": "przewrot specjalny (1.2 s, 4.2 m; prawdopodobnie salto z Pierscienia Ciemnego Drewna) - ER nie ma; zostaje DSR"
+    },
+    {
+      "dsr": 900,
+      "co": "skok DSR = jedna animacja (odbicie+lot+ladowanie); ER dzieli skok na start/petla/ladowanie (2020xx) - osobny etap"
+    }
+  ],
+  "locomotion": [
+    {
+      "dsr": 200,
+      "er": 20000,
+      "co": "chod lekki, przod",
+      "pewnosc": "MoveParam+nazwa"
+    },
+    {
+      "dsr": 201,
+      "er": 20001,
+      "co": "chod lekki, tyl",
+      "pewnosc": "MoveParam+nazwa"
+    },
+    {
+      "dsr": 202,
+      "er": 20002,
+      "co": "chod lekki, lewo",
+      "pewnosc": "MoveParam+nazwa"
+    },
+    {
+      "dsr": 203,
+      "er": 20003,
+      "co": "chod lekki, prawo",
+      "pewnosc": "MoveParam+nazwa"
+    },
+    {
+      "dsr": 300,
+      "er": 20000,
+      "co": "chod sredni -> ER Light, przod",
+      "pewnosc": "MoveParam+nazwa"
+    },
+    {
+      "dsr": 301,
+      "er": 20001,
+      "co": "chod sredni -> ER Light, tyl",
+      "pewnosc": "MoveParam+nazwa"
+    },
+    {
+      "dsr": 302,
+      "er": 20002,
+      "co": "chod sredni -> ER Light, lewo",
+      "pewnosc": "MoveParam+nazwa"
+    },
+    {
+      "dsr": 303,
+      "er": 20003,
+      "co": "chod sredni -> ER Light, prawo",
+      "pewnosc": "MoveParam+nazwa"
+    },
+    {
+      "dsr": 310,
+      "er": 20010,
+      "co": "chod ciezki/przeciazony -> ER Heavy, przod",
+      "pewnosc": "MoveParam+nazwa"
+    },
+    {
+      "dsr": 311,
+      "er": 20011,
+      "co": "chod ciezki/przeciazony -> ER Heavy, tyl",
+      "pewnosc": "MoveParam+nazwa"
+    },
+    {
+      "dsr": 312,
+      "er": 20012,
+      "co": "chod ciezki/przeciazony -> ER Heavy, lewo",
+      "pewnosc": "MoveParam+nazwa"
+    },
+    {
+      "dsr": 313,
+      "er": 20013,
+      "co": "chod ciezki/przeciazony -> ER Heavy, prawo",
+      "pewnosc": "MoveParam+nazwa"
+    },
+    {
+      "dsr": 500,
+      "er": 20100,
+      "co": "bieg lekki, przod",
+      "pewnosc": "MoveParam+nazwa"
+    },
+    {
+      "dsr": 501,
+      "er": 20101,
+      "co": "bieg lekki, tyl",
+      "pewnosc": "MoveParam+nazwa"
+    },
+    {
+      "dsr": 502,
+      "er": 20102,
+      "co": "bieg lekki, lewo",
+      "pewnosc": "MoveParam+nazwa"
+    },
+    {
+      "dsr": 503,
+      "er": 20103,
+      "co": "bieg lekki, prawo",
+      "pewnosc": "MoveParam+nazwa"
+    },
+    {
+      "dsr": 550,
+      "er": 20100,
+      "co": "bieg sredni -> ER Light, przod",
+      "pewnosc": "MoveParam+nazwa"
+    },
+    {
+      "dsr": 551,
+      "er": 20101,
+      "co": "bieg sredni -> ER Light, tyl",
+      "pewnosc": "MoveParam+nazwa"
+    },
+    {
+      "dsr": 552,
+      "er": 20102,
+      "co": "bieg sredni -> ER Light, lewo",
+      "pewnosc": "MoveParam+nazwa"
+    },
+    {
+      "dsr": 553,
+      "er": 20103,
+      "co": "bieg sredni -> ER Light, prawo",
+      "pewnosc": "MoveParam+nazwa"
+    },
+    {
+      "dsr": 560,
+      "er": 20110,
+      "co": "bieg ciezki -> ER Heavy, przod",
+      "pewnosc": "MoveParam+nazwa"
+    },
+    {
+      "dsr": 561,
+      "er": 20111,
+      "co": "bieg ciezki -> ER Heavy, tyl",
+      "pewnosc": "MoveParam+nazwa"
+    },
+    {
+      "dsr": 562,
+      "er": 20112,
+      "co": "bieg ciezki -> ER Heavy, lewo",
+      "pewnosc": "MoveParam+nazwa"
+    },
+    {
+      "dsr": 563,
+      "er": 20113,
+      "co": "bieg ciezki -> ER Heavy, prawo",
+      "pewnosc": "MoveParam+nazwa"
+    },
+    {
+      "dsr": 510,
+      "er": 20200,
+      "co": "sprint lekki",
+      "pewnosc": "MoveParam+nazwa"
+    },
+    {
+      "dsr": 760,
+      "er": 20200,
+      "co": "sprint sredni -> ER Light",
+      "pewnosc": "MoveParam+nazwa"
+    },
+    {
+      "dsr": 770,
+      "er": 20210,
+      "co": "sprint ciezki -> ER Heavy",
+      "pewnosc": "MoveParam+nazwa"
+    }
+  ],
+  "_zrodla_locomotion": "DSR: GameParam MoveParam (wiersze 0 lekki, 5 sredni, 10 ciezki, 15 przeciazony: walk/run/sprint). ER: graf zachowan, Walk/Run/Dash{Front,Back,Left,Right}{Light,Heavy,Over}.",
+  "turns_stops": [
+    {
+      "dsr": 800,
+      "er": 22100,
+      "co": "hamowanie z biegu, przod (~0.7 m)",
+      "pewnosc": "pomiar+nazwa"
+    },
+    {
+      "dsr": 801,
+      "er": 22101,
+      "co": "hamowanie z biegu, tyl (~0.7 m)",
+      "pewnosc": "pomiar+nazwa"
+    },
+    {
+      "dsr": 802,
+      "er": 22102,
+      "co": "hamowanie z biegu, lewo (~0.7 m)",
+      "pewnosc": "pomiar+nazwa"
+    },
+    {
+      "dsr": 803,
+      "er": 22103,
+      "co": "hamowanie z biegu, prawo (~0.7 m)",
+      "pewnosc": "pomiar+nazwa"
+    },
+    {
+      "dsr": 804,
+      "er": 22000,
+      "co": "hamowanie z chodu, przod",
+      "pewnosc": "domysl (pomiar 0-0.5 m)"
+    },
+    {
+      "dsr": 805,
+      "er": 22001,
+      "co": "hamowanie z chodu, tyl",
+      "pewnosc": "domysl (pomiar 0-0.5 m)"
+    },
+    {
+      "dsr": 806,
+      "er": 22002,
+      "co": "hamowanie z chodu, lewo",
+      "pewnosc": "domysl (pomiar 0-0.5 m)"
+    },
+    {
+      "dsr": 807,
+      "er": 22003,
+      "co": "hamowanie z chodu, prawo",
+      "pewnosc": "domysl (pomiar 0-0.5 m)"
+    },
+    {
+      "dsr": 602,
+      "er": 26020,
+      "co": "obrot w lewo (MoveParam TurnLeft) -> ER QuickTurnLeft180",
+      "pewnosc": "domysl"
+    },
+    {
+      "dsr": 603,
+      "er": 26030,
+      "co": "obrot w prawo (MoveParam TurnRight) -> ER QuickTurnRight180",
+      "pewnosc": "domysl"
+    }
+  ],
+  "jump": [
+    {
+      "dsr": 900,
+      "er": 202030,
+      "co": "skok ze sprintu (DSR RunningRoll) <- Jump_D_Direction_Front",
+      "pewnosc": "nazwa"
+    },
+    {
+      "dsr": 901,
+      "er": 202000,
+      "co": "skok z miejsca (nasz wariant) <- Jump_NN",
+      "pewnosc": "nazwa"
+    },
+    {
+      "dsr": 902,
+      "er": 202020,
+      "co": "skok w marszu/biegu (nasz wariant) <- Jump_F_Direction_Front",
+      "pewnosc": "nazwa"
+    },
+    {
+      "dsr": 1580,
+      "er": 202040,
+      "co": "lot po skoku (log: 1580 po 900, warstwa 8) <- Jump_Loop",
+      "pewnosc": "log+nazwa"
+    },
+    {
+      "dsr": 1790,
+      "er": 202100,
+      "co": "ladowanie po skoku (log: 1790 po 1580) <- Jump_Land_N_NormalHeight",
+      "pewnosc": "log+nazwa"
+    },
+    {
+      "dsr": 1750,
+      "er": 4200,
+      "co": "ladowanie po spadku, nisko (log) <- LandDefault",
+      "pewnosc": "log+nazwa"
+    },
+    {
+      "dsr": 1755,
+      "er": 202130,
+      "co": "ladowanie po spadku, srednio (log) <- Jump_Land_MiddleHeight (brak LandMiddle 4210 w repo)",
+      "pewnosc": "log+domysl"
+    },
+    {
+      "dsr": 1760,
+      "er": 202140,
+      "co": "ladowanie po spadku, wysoko (log) <- Jump_Land_GreatHeight (brak LandHeavy 4220 w repo)",
+      "pewnosc": "log+domysl"
+    }
+  ],
+  "fall": [
+    {
+      "dsr": 1550,
+      "er": 4050,
+      "co": "poczatek spadania (log: po wybiciu skoku i przy zejsciu z krawedzi, warstwa 8) <- FallStart",
+      "pewnosc": "log+nazwa"
+    }
+  ],
+  "estus": [
+    {
+      "dsr": 7585,
+      "er": 50110,
+      "co": "estus: wyciagniecie flaszki <- ItemDrinkStart",
+      "pewnosc": "nazwa+czas"
+    },
+    {
+      "dsr": 7586,
+      "er": 50111,
+      "co": "estus: picie <- ItemDrinking",
+      "pewnosc": "nazwa"
+    },
+    {
+      "dsr": 7587,
+      "er": 50112,
+      "co": "estus: schowanie flaszki <- ItemDrinkEnd",
+      "pewnosc": "nazwa+czas"
+    },
+    {
+      "dsr": 7588,
+      "er": 50113,
+      "co": "estus: pusta flaszka <- ItemDrinkEmpty",
+      "pewnosc": "nazwa+czas"
+    },
+    {
+      "dsr": 7589,
+      "er": 50114,
+      "co": "estus: brak flaszki <- ItemDrinkNothing",
+      "pewnosc": "domysl"
+    }
+  ]
+}

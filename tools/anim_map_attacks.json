@@ -1,0 +1,8 @@
+﻿{
+  "_opis": "Pary atakow DSR -> ER w tej samej grupie broni (numeracja grup wspolna, patrz docs/weapon_groups_dsr_er.md). _wspolne_pary stosowane do kazdej grupy z _grupy (para pomijana, jesli ktorejs animacji brak). DSR: 300x R1 jedna reka, 400x R1 oburacz, 3500/4500 atak z biegu, 3900/4900 atak z przewrotu (potwierdzone logiem). ER: AttackRightLight1.. = 0300x0, AttackBothLight1.. = 0320x0, LightDash 030200/032200, LightStep (przewrot) 030300/032300. Atak z odskoku w DSR to ta sama animacja co atak z biegu (3500/4500, potwierdzone logiem: backstep 680 -> 353500), wiec ER 030400 nie ma osobnego odpowiednika. R2: DSR 3300/3310 (4300/4310) <- ER Heavy1Start/Heavy2Start 030500/030510 (032500/032510) - start ER zawiera faze przed ladowaniem (trafienie ~1.9 s), wiec wejscie w cios zostaje DSR (nie zwalniamy); przyspiesza koncowka po trafieniu. Pominiete grupy: 41 kostury/talizmany, 44 luki, 46 kusze, 47/48 tarcze.",
+  "_grupy": ["a20", "a23", "a25", "a26", "a27", "a28", "a29", "a30", "a32", "a33", "a35", "a36", "a38", "a42", "a43"],
+  "_wspolne_pary": [[3000, 30000], [3001, 30010], [3002, 30020], [3003, 30030], [3004, 30040], [3005, 30050],
+                    [4000, 32000], [4001, 32010], [4002, 32020], [4003, 32030], [4004, 32040], [4005, 32050],
+                    [3500, 30200], [4500, 32200], [3900, 30300], [4900, 32300],
+                    [3300, 30500], [3310, 30510], [4300, 32500], [4310, 32510]]
+}

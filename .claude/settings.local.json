@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/nemos/workspace/**)",
+      "Read(//c/Program Files \\\\\\(x86\\\\\\)/Steam/steamapps/common/**)",
+      "Read(//f/SteamLibrary/steamapps/common/DARK SOULS REMASTERED/chr/c0000-anibnd-dcx/hkxx64/**)",
+      "Bash(iconv -f SHIFT-JIS -t UTF-8 c0000_a00_lo.txt)",
+      "Bash(python -c ' *)"
+    ]
+  }
+}
