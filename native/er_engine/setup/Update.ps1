@@ -1,6 +1,7 @@
 # ER-Inspired DSR Remake - update check (run by the launcher before every game start).
 #
-# Asks the GitHub API for the latest release of {REPO}. When it is newer than this package, shows a prompt;
+# Asks the GitHub API for the releases of {REPO} (pre-releases included) and takes the highest version. When it
+# is newer than this package, shows a prompt;
 # on "Yes" downloads the release .zip, checks it, backs up the current mod files to _backup\v<old>\ and
 # replaces them. Kept: bin\er_engine.ini (user values merged into the new file), the launcher .bat,
 # setup\modengine2_path.txt and the log. The game folder and Mod Engine 2 are never touched.
@@ -82,13 +83,21 @@ if (-not $FromZip) {
     try {
         [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
         $headers = @{ 'User-Agent' = 'ER-Inspired-DSR-Remake-updater'; 'Accept' = 'application/vnd.github+json' }
-        $rel = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/latest" -Headers $headers -TimeoutSec 6
+        # The versions are published as pre-releases, which /releases/latest skips (404): read the list and take
+        # the highest version that carries the package zip. Assigned without @(): Windows PowerShell 5.1 returns
+        # the JSON array as one pipeline object, foreach below walks its elements.
+        $list = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases?per_page=30" -Headers $headers -TimeoutSec 6
     } catch {
         if ($Manual) { [void](Show-Box "Nie udało się sprawdzić aktualizacji (brak sieci albo GitHub niedostępny).`n$($_.Exception.Message)" 'OK' 'Warning') }
         exit 0
     }
-    $remote = ConvertTo-Version ([string]$rel.tag_name)
-    $asset = @($rel.assets | Where-Object { $_.name -like "${FileBase}_v*.zip" }) | Select-Object -First 1
+    $rel = $null; $remote = $null; $asset = $null
+    foreach ($r in $list) {
+        if ($r.draft) { continue }
+        $v = ConvertTo-Version ([string]$r.tag_name)
+        $a = @($r.assets | Where-Object { $_.name -like "${FileBase}_v*.zip" }) | Select-Object -First 1
+        if ($v -and $a -and (-not $remote -or $v -gt $remote)) { $rel = $r; $remote = $v; $asset = $a }
+    }
     if (-not $remote -or $remote -le $local -or -not $asset) {
         if ($Manual) { [void](Show-Box "Masz najnowszą wersję ($Version).") }
         exit 0
