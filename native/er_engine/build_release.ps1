@@ -4,7 +4,8 @@
 # (Setup.bat + setup\Setup.ps1; called "Konfiguracja" in the UI - it installs nothing) and README. No third-party DLLs are bundled.
 # Usage: powershell -ExecutionPolicy Bypass -File native\er_engine\build_release.ps1 [-Version 1.1] [-SkipInstallerTest]
 param(
-    [string]$Version = '1.1',
+    [string]$Version = '1.2',
+    [string]$Repo = 'Contingens1/ER-Inspired_DSR_Remake',   # GitHub repo whose latest release setup\Update.ps1 checks
     [switch]$SkipInstallerTest
 )
 $ErrorActionPreference = 'Stop'
@@ -36,6 +37,12 @@ if ($dllText.Contains('===== ZNACZNIK')) { throw 'Release DLL contains diagnosti
 
 # 2. DLL settings and game files (loaded by Mod Engine 2; the game folder is never touched).
 Copy-Item "$dev\bin\er_engine.ini" "$out\bin\"
+# [Update] is read only by setup\Update.ps1 (the DLL ignores it); add it if the dev ini does not have it.
+$iniText = [IO.File]::ReadAllText("$out\bin\er_engine.ini")
+if ($iniText -notmatch '(?m)^\[Update\]') {
+    $iniText = $iniText.TrimEnd() + "`r`n`r`n[Update]`r`n; 1 = the launcher checks GitHub for a newer version of the mod before every start and asks before installing it`r`n; 0 = no check`r`nCheckForUpdates=1`r`n"
+    [IO.File]::WriteAllText("$out\bin\er_engine.ini", $iniText, $utf8NoBom)
+}
 Copy-Item "$dev\files\*" "$out\files\" -Recurse
 if (-not (Test-Path "$out\files\chr\c0000.esd.dcx")) { throw 'files\chr\c0000.esd.dcx is missing in the dev mod folder.' }
 
@@ -66,6 +73,9 @@ enabled = false
 $ps1 = [IO.File]::ReadAllText("$PSScriptRoot\setup\Setup.ps1", [Text.Encoding]::UTF8)
 $ps1 = $ps1.Replace('{VERSION}', $Version).Replace('{EXE_SHA256}', $exeSha256)
 [IO.File]::WriteAllText("$out\setup\Setup.ps1", $ps1.Replace("`r`n", "`n").Replace("`n", "`r`n"), $utf8Bom)
+$upd = [IO.File]::ReadAllText("$PSScriptRoot\setup\Update.ps1", [Text.Encoding]::UTF8)
+$upd = $upd.Replace('{VERSION}', $Version).Replace('{REPO}', $Repo)
+[IO.File]::WriteAllText("$out\setup\Update.ps1", $upd.Replace("`r`n", "`n").Replace("`n", "`r`n"), $utf8Bom)
 @'
 @echo off
 chcp 65001 >nul
@@ -109,8 +119,24 @@ if (-not $SkipInstallerTest) {
             $bat = Join-Path $pkg "Launch_$fileBase.bat"
             if (-not (Test-Path $bat)) { throw 'Installer did not create the launcher .bat.' }
             if (-not ((Get-Content $bat -Raw).Contains("set `"MODENGINE2=$devModEngine2`""))) { throw 'Launcher .bat does not contain the Mod Engine 2 path.' }
+            if (-not ((Get-Content $bat -Raw).Contains('setup\Update.ps1'))) { throw 'Launcher .bat does not run the update check.' }
             if (-not (Test-Path (Join-Path $pkg "$fileBase.toml"))) { throw 'Installer did not create the .toml.' }
             'Installer test: OK (window builds, wrong folder rejected, launcher and config generated)'
+
+            # Updater: install the same package over this copy from the local zip (no network).
+            $ini = Join-Path $pkg 'bin\er_engine.ini'
+            [IO.File]::WriteAllText($ini, ([IO.File]::ReadAllText($ini) -replace '(?m)^OmniRoll=1', 'OmniRoll=0'))
+            Set-Content -LiteralPath (Join-Path $pkg 'files\stale_file.txt') -Value 'x'
+            $batBefore = Get-Content $bat -Raw
+            & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $pkg 'setup\Update.ps1') -FromZip $zip -Yes
+            if ($LASTEXITCODE -ne 0) { throw "Update.ps1 -FromZip failed (exit $LASTEXITCODE)." }
+            if (-not ([IO.File]::ReadAllText($ini) -match '(?m)^OmniRoll=0')) { throw 'Updater did not keep the user value in er_engine.ini.' }
+            if (-not ([IO.File]::ReadAllText($ini) -match '(?m)^CheckForUpdates=1')) { throw 'Updater lost the [Update] section of the new ini.' }
+            if (Test-Path (Join-Path $pkg 'files\stale_file.txt')) { throw 'Updater did not remove a file that is not in the new package.' }
+            if (-not (Test-Path (Join-Path $pkg "_backup\v$Version\files\stale_file.txt"))) { throw 'Updater did not back up the previous files.' }
+            if ((Get-Content $bat -Raw) -ne $batBefore) { throw 'Updater changed the launcher .bat.' }
+            if (-not (Test-Path (Join-Path $pkg 'bin\er_engine.dll'))) { throw 'DLL missing after the update.' }
+            'Updater test: OK (local package installed, ini values kept, stale file removed, backup made, launcher untouched)'
         } else {
             "Installer test: Mod Engine 2 not found at $devModEngine2 - generation step skipped"
         }

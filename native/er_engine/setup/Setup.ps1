@@ -174,6 +174,8 @@ if not exist "%MODENGINE2%\$LauncherExe" (
     pause
     exit /b 1
 )
+rem Update check (GitHub). Switch off: bin\er_engine.ini, [Update] CheckForUpdates=0.
+if exist "%~dp0setup\Update.ps1" powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0setup\Update.ps1"
 "%MODENGINE2%\$LauncherExe" -t dsr -c "%~dp0$FileBase.toml"
 "@
     [IO.File]::WriteAllText($BatPath, $bat.Replace("`r`n", "`n").Replace("`n", "`r`n"), $utf8NoBom)

@@ -27,12 +27,32 @@ Jeśli przeniesiesz folder Mod Engine 2 w inne miejsce, uruchom `Setup.bat` jesz
 
 **Usunięcie moda:** usuń folder moda i skrót. Pliki gry nie są modyfikowane — gra uruchomiona ze Steama działa zawsze bez moda.
 
+## Aktualizacje *(nowe w 1.2)*
+
+Launcher przed każdym uruchomieniem gry sprawdza na GitHubie, czy jest nowsza wersja moda (trwa to najwyżej kilka sekund; bez internetu gra startuje normalnie). Jeśli jest, pyta, czy ją pobrać i zainstalować:
+- **Tak** — pobiera paczkę, wymienia pliki w folderze moda i uruchamia grę już na nowej wersji. Twoje ustawienia z `bin\er_engine.ini` zostają, launcher i ścieżka do Mod Engine 2 też. Poprzednia wersja trafia do `_backup\v<wersja>` (cofnięcie = skopiować jej zawartość z powrotem do folderu moda).
+- **Nie** — gra startuje na obecnej wersji, pytanie wróci przy następnym uruchomieniu.
+
+Aktualizacja zmienia wyłącznie pliki w folderze moda — nie dotyka gry ani Mod Engine 2. Wyłączenie sprawdzania: `CheckForUpdates=0` w `bin\er_engine.ini`. Ręczne sprawdzenie: `powershell -ExecutionPolicy Bypass -File setup\Update.ps1 -Manual`.
+
+**Przejście z 1.0 / 1.1:** te wersje nie mają aktualizacji. Rozpakuj 1.2 do nowego folderu i uruchom `Setup.bat` jeszcze raz (nowy launcher zawiera sprawdzanie aktualizacji). Ustawienia z `bin\er_engine.ini` przenieś ręcznie, jeśli je zmieniałeś.
+
 **Konfiguracja bez okna** (dla zaawansowanych): `Setup.bat -Silent -ModEngine2Path "D:\ścieżka\do\ModEngine2" [-Shortcut]`. Ręcznie, bez `Setup.bat`: `modengine2_launcher.exe -t dsr -c "<folder moda>\ER-Inspired_DSR_Remake.toml"`.
 
 ## WAŻNE
 
 - **Graj wyłącznie offline.** Mod zmienia działanie gry w pamięci — gra online grozi banem. Mod nie ma własnej blokady sieci; przed uruchomieniem przełącz Steama w tryb offline albo ustaw w grze start w trybie offline.
 - Na innej wersji `DarkSoulsRemastered.exe` hooki się nie założą i mechaniki z DLL nie będą działać (log: `bin\er_engine.log`).
+
+## Nowe w 1.2
+
+- **Aktualizacje z poziomu launchera** (sekcja „Aktualizacje”).
+- **Sprint poza walką nie zużywa wytrzymałości** (jak w ER). Przewroty, skoki i ataki kosztują zawsze.
+- **Trafienie przerywa picie i użycie przedmiotu** — flaszka nie zostaje już w ręce przy powaleniu.
+- **Dusze i człowieczeństwo w ruchu** — przy ich użyciu postać zwalnia do chodu jak przy estusie (wcześniej mogła biec i miała zablokowany kierunek).
+- **Estus:** limit prędkości nie wyłącza się już przy długim ciągu łyków.
+- **Przewroty przy namierzeniu:** przewrót skolejkowany w trakcie innej animacji (np. reakcji na trafienie) zachowuje wybrany kierunek, zamiast iść w przód; przewrót przy puszczeniu klawisza działa też przy gałce po skosie (przód–bok).
+- **Halabardy:** atak z rozbiegu nie jest już nienaturalnie szybki.
 
 ## Co zmienia
 
@@ -61,12 +81,16 @@ Jeśli przeniesiesz folder Mod Engine 2 w inne miejsce, uruchom `Setup.bat` jesz
 - `RollBuffer=1` — bufor klawisza uniku (`0` = wyłączony),
 - `LockOnSprint=1` — przy namierzeniu przewrót przy puszczeniu klawisza (`0` = jak w DSR: przewrót w bok i w tył od razu przy wciśnięciu),
 - `FreeOutOfCombat=1` (sekcja `[Stamina]`) — poza walką sprint nie zużywa wytrzymałości; przewroty, skoki i ataki kosztują zawsze (`0` = jak w DSR). „Walka" = namierzony cel, utrata HP w ostatnich 8 s albo atak bronią w ostatnich 5 s.
+- `HitCancelsItem=1` (sekcja `[Items]`) — reakcja na trafienie przerywa picie estusa / użycie przedmiotu (`0` = wyłączone; flaszka potrafi wtedy zostać w ręce przy powaleniu),
+- `CheckForUpdates=1` (sekcja `[Update]`) — sprawdzanie nowej wersji przy uruchomieniu (`0` = wyłączone).
 
 ## Znane ograniczenia
 
 - Ataki z wyskoku: przy dotknięciu ziemi widać lekkie szarpnięcie postaci i mały przeskok animacji. Katana używa animacji miecza zakrzywionego, a zwykły atak toporem — animacji młota (brak przeliczonych animacji ER dla tych grup). Młoty nie mają R2 z wyskoku, pięści nie mają ataków z wyskoku wcale. Przy bardzo długim upadku zamach kończy się w powietrzu i dalej leci zwykłe spadanie.
 - Sprint przy namierzonym celu działa tylko w przód (jak w DSR); w bok i w tył postać idzie krokiem.
-- Przy piciu w marszu broń w ręce chwilę miga; po trafieniu w trakcie picia flaszka zostaje na moment w ręce. Kosmetyczne.
+- Przy piciu w marszu broń w ręce chwilę miga. Kosmetyczne.
+- Darmowy sprint: walka jest wykrywana w uproszczeniu — wróg, który goni gracza, ale jeszcze nie trafił i nie jest namierzony, nie wyłącza darmowego sprintu.
+- Sporadycznie postać potrafi „zawisnąć” bez animacji (stoi mimo wciśniętego kierunku) do następnego trafienia lub akcji. Przyczyna jeszcze nieustalona.
 - Lekkie ślizganie przy lądowaniu po skoku; z bronią ręce przeskakują do innej pozy przy przejściu skok → spadanie.
 - Blok tarczą w sprincie wygląda nienaturalnie (animacja sprintu z ER).
 - Unik kończący się na ścianie przy namierzeniu potrafi sporadycznie zawiesić postać w pozie do następnej akcji.
