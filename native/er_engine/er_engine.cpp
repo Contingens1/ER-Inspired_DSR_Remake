@@ -257,6 +257,7 @@ static void AirControlTick(float dt);   // nizej, sterowanie w locie
 static void AirControlOnPlayAnim(int anim, int layer);
 static void PhysProbeTick();            // nizej, sonda fizyki skoku (tylko odczyt)
 static void EnemyProbeTick();           // below: enemy attack probe (read-only, ER_DIAG)
+static void HangProbeTick(const BYTE* ctx, void* p3);  // below: frozen-player probe (read-only, ER_DIAG)
 static void AirMomentumTick(float dt);  // nizej, rozped w spadaniu po skoku
 static void AirMomentumStart(int anim);
 static void AirMomentumOnOtherAnim();
@@ -325,7 +326,8 @@ static DWORD g_omniArmedAt = 0;
 static bool g_omniActive = false;
 static float g_omniActiveYaw = 0.0f;
 static float g_omniHoldElapsed = 0.0f;
-constexpr float kOmniHoldSec = 0.50f;    // covers 0..0.07s pre-JT7 gap + roll travel, ends before ~0.56s cancel window
+constexpr DWORD kOmniQueuedMaxMs = 4500; // a queued roll may wait this long (longest knockdown: roll from 3.0 s)
+constexpr float kOmniHoldSec = 0.50f;   // covers 0..0.07s pre-JT7 gap + roll travel, ends before ~0.56s cancel window
 
 static bool IsForwardRollAnim(int a) {
     return a == 700 || a == 710 || a == 720 || a == 730 || a == 735;
@@ -430,7 +432,9 @@ static void OmniRollPostInput(BYTE* ctx, float dt, void* p3) {
         g_omniActive = false;
         return;
     }
-    if (!IsLockedOnRollable(ctx, p3)) return;
+    // Without a lock-on target a pending direction must not reach a later roll (queued rolls keep it for
+    // up to kOmniQueuedMaxMs).
+    if (!IsLockedOnRollable(ctx, p3)) { g_omniArmed = false; return; }
 
     // Also convert DSR's built-in action queue slot (ctx+0x224: index relative to 0x84) for recovery-queued rolls
     int& queued = *reinterpret_cast<int*>(ctx + 0x224);
@@ -481,14 +485,24 @@ static void OmniRollOnPlayAnim(void* ctx, int anim, int layer, int a6) {
     if (!isPlayer) return;
     if (IsForwardRollAnim(anim)) {
         DWORD now = GetTickCount();
-        if (g_omniRollOn && g_omniArmed && now - g_omniArmedAt <= 400) {
+        DWORD age = now - g_omniArmedAt;
+        if (g_omniRollOn && g_omniArmed && age <= kOmniQueuedMaxMs) {
+            // A roll pressed during a hit reaction or another animation is queued by the game and starts
+            // when that animation lets it. With the old 400 ms limit such a roll got no direction at all
+            // and went straight ahead (logs 2026-11-13: rolls starting 450-810 ms after the request).
+            // A queued roll takes the direction held when it starts, else the one held at the press.
+            bool queued = age > 400;
+            float yaw = g_omniArmedYaw;
+            if (queued && g_omniLastStickAt && now - g_omniLastStickAt < 150) yaw = g_omniLastStickYaw;
             g_omniArmed = false;
             g_omniActive = true;
-            g_omniActiveYaw = g_omniArmedYaw;
+            g_omniActiveYaw = yaw;
             g_omniHoldElapsed = 0.0f;
             OmniApplyYawNow(g_omniActiveYaw);
             if (kDiag)
-                Log("[%7lu ms] omniroll: commit anim=%d yaw=%.3f rad", now - g_t0, anim, g_omniActiveYaw);
+                Log("[%7lu ms] omniroll: commit anim=%d yaw=%.3f rad%s", now - g_t0, anim, g_omniActiveYaw,
+                    queued ? " (queued roll)" : "");
+            if (kDiag && queued) Log("[%7lu ms] omniroll: queued roll started %lu ms after the request", now - g_t0, age);
         } else {
             g_omniActive = false;
         }
@@ -755,7 +769,7 @@ static void __fastcall InputDetour(void* ctx, float dt, void* p3) {
     AttackSpeedTick(dt);
     AirControlTick(dt);
     AirMomentumTick(dt);
-    if (kDiag) { PhysProbeTick(); EnemyProbeTick(); }
+    if (kDiag) { PhysProbeTick(); EnemyProbeTick(); HangProbeTick(static_cast<const BYTE*>(ctx), p3); }
     AirAttackTick(dt);
     if (kDiag) {  // F8 = znacznik w logu (podzial testu na kroki)
         static bool f8 = false;
@@ -1038,9 +1052,11 @@ static void EnemyProbeTick() {
 // Vanilla drinks on the full body, where the reaction replaces it. Here the item animation is ended by
 // hand as soon as the reaction starts.
 static int g_itemUpperAnim = -1;  // item animation the player currently has on layer 6
+static int g_playerDmgAnim = -1;  // player's current layer-11 animation (hit reaction), for the hang probe
 static void ItemUpperOnPlayAnim(void* ctx, void* out, int anim, int layer, char a5, int a6) {
     if (!g_playerAnimCtx || ctx != g_playerAnimCtx) return;
     if (layer == 6) { g_itemUpperAnim = IsItemWalkAnim(anim) ? anim : -1; return; }
+    if (layer == 11) g_playerDmgAnim = anim;
     if (layer != 11 || anim < 2000 || anim > 2099 || g_itemUpperAnim < 0 || !g_itemHitCancelOn) return;
     Log("[%7lu ms] item: hit reaction %d during item anim %d - ending the upper-body animation",
         GetTickCount() - g_t0, anim, g_itemUpperAnim);
@@ -1899,6 +1915,90 @@ static void ReportDrinkDiff() {
             }
         }
     }
+}
+
+// --- Hang probe (ER_DIAG only, read-only) -------------------------------------------------------
+// The "hang": the player stands frozen with no full-body animation while a direction is held, until a hit
+// ends it (log 2026-11-13: 4.7 s after a roll ended; position and velocity constant, on the ground). The
+// cause is unknown. This probe keeps a snapshot of the three player regions from the last frame the
+// player was really walking, and when the frozen state lasts kHangAfterMs it logs every dword that
+// differs, plus the input and DLL state. Compare several reports: fields that differ every time are the
+// candidates (the drink probe found the action permissions the same way: ActionCtrl+0x1A0..0x1B7).
+constexpr DWORD kHangAfterMs = 600;
+static BYTE g_walkSnap[3][kSnapSize];
+static bool g_walkSnapOk = false;
+
+static void HangProbeTick(const BYTE* ctx, void* p3) {
+    static float lastX = 0.f, lastZ = 0.f;
+    static DWORD frozenSince = 0;
+    static bool reported = false;
+    BYTE* pos = ChrPosData();
+    MemRegion r[3];
+    if (!pos || !PlayerRegions(r)) return;
+    float x = 0.f, z = 0.f;
+    __try {
+        x = *reinterpret_cast<float*>(pos + 0x10);
+        z = *reinterpret_cast<float*>(pos + 0x18);
+    } __except (EXCEPTION_EXECUTE_HANDLER) { return; }
+    float step = sqrtf((x - lastX) * (x - lastX) + (z - lastZ) * (z - lastZ));
+    lastX = x; lastZ = z;
+    float mag = sqrtf(g_axis[0] * g_axis[0] + g_axis[1] * g_axis[1]);
+    DWORD now = GetTickCount();
+    bool wantsMove = mag > 0.5f && g_mainAnim == -1 && !g_airAtkMoveLock;
+    if (!wantsMove || step > 0.004f) {
+        if (reported && frozenSince)
+            Log("[%7lu ms] HANG probe: over after %lu ms (main anim %d, step %.3f m, axes %.2f %.2f)", now - g_t0,
+                now - frozenSince, g_mainAnim, step, g_axis[0], g_axis[1]);
+        frozenSince = 0;
+        reported = false;
+        if (wantsMove && step > 0.01f && step < 1.0f && g_playerDmgAnim == -1 && g_itemUpperAnim == -1) {
+            __try {
+                for (int i = 0; i < 3; ++i) memcpy(g_walkSnap[i], r[i].ptr, kSnapSize);
+                g_walkSnapOk = true;
+            } __except (EXCEPTION_EXECUTE_HANDLER) {}
+        }
+        return;
+    }
+    if (!frozenSince) frozenSince = now ? now : 1;
+    if (reported || now - frozenSince < kHangAfterMs) return;
+    reported = true;
+    int lockFree = -1, stamina = -1;
+    DWORD chrFlags = 0;
+    __try {
+        auto b = static_cast<const BYTE*>(p3);
+        lockFree = b[0x21D];
+        auto chr = *reinterpret_cast<BYTE* const*>(b + 0x10);
+        if (reinterpret_cast<ULONG_PTR>(chr) >= 0x10000) {
+            stamina = *reinterpret_cast<const int*>(chr + 0x3F8);
+            chrFlags = *reinterpret_cast<const DWORD*>(chr + 0x524);
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {}
+    Log("[%7lu ms] HANG probe: frozen %lu ms with a direction held (axes %.2f %.2f) | hit anim L11 %d, item anim L6 %d, "
+        "drink %d, omni active %d armed %d | free-move %d stamina %d chr+0x524 %08lX", now - g_t0, now - frozenSince,
+        g_axis[0], g_axis[1], g_playerDmgAnim, g_itemUpperAnim, DrinkActive() ? 1 : 0, g_omniActive ? 1 : 0,
+        g_omniArmed ? 1 : 0, lockFree, stamina, chrFlags);
+    __try {
+        for (int from = 0x84; from < 0xD0; from += 0x26) {  // two lines: the log keeps 240 characters per line
+            char line[3 * 0x26 + 8];
+            int n = 0;
+            for (int o = from; o < from + 0x26 && o < 0xD0; ++o) n += sprintf_s(line + n, sizeof(line) - n, "%02X ", ctx[o]);
+            Log("  input ctx from +0x%02X: %s", from, line);
+        }
+        Log("  input ctx +0x1C4 %02X  +0x1E4 %02X  +0x224 %d  +0x260 %.3f  +0x324 %.3f  +0x328 %02X  +0x329 %02X  +0x350 %02X",
+            ctx[0x1C4], ctx[0x1E4], *reinterpret_cast<const int*>(ctx + 0x224), *reinterpret_cast<const float*>(ctx + 0x260),
+            *reinterpret_cast<const float*>(ctx + 0x324), ctx[0x328], ctx[0x329], ctx[0x350]);
+        Log("  physics: ground %d slope %d +6D %d +1F0 %d +1F2 %d +1F3 %d +1F4 %d gravity scale %.2f", pos[0x32], pos[0x33],
+            pos[0x6D], pos[0x1F0], pos[0x1F2], pos[0x1F3], pos[0x1F4], *reinterpret_cast<float*>(pos + 0x1E4));
+        if (!g_walkSnapOk) { Log("  no walking snapshot yet - nothing to compare"); return; }
+        for (int i = 0; i < 3; ++i) {
+            int shown = 0;
+            for (size_t o = 0; o + 4 <= kSnapSize && shown < 60; o += 4) {
+                DWORD a = *reinterpret_cast<DWORD*>(&g_walkSnap[i][o]);
+                DWORD b = *reinterpret_cast<DWORD*>(r[i].ptr + o);
+                if (a != b) { Log("  hang diff %s+0x%03zX: walk=%08lX hang=%08lX", r[i].name, o, a, b); ++shown; }
+            }
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {}
 }
 
 // --- EKSPERYMENT: odblokowanie ruchu w trakcie picia ----------------------------------------
