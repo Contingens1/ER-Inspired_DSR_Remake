@@ -1,6 +1,6 @@
 ﻿# ER-Inspired DSR Remake v{VERSION} — Dark Souls Remastered
 
-Ruch, uniki, skok i picie estusa w stylu Elden Ringa w Dark Souls Remastered. Od 1.3 także pierwszy przerobiony boss: Rycerz Artorias z drugą fazą i atakami z Nightreign.
+Ruch, uniki, skok i picie estusa w stylu Elden Ringa w Dark Souls Remastered. Od 0.4.0 także pierwszy przerobiony boss: Rycerz Artorias z drugą fazą i atakami z Nightreign.
 
 ## Wymagania
 
@@ -27,7 +27,7 @@ Jeśli przeniesiesz folder Mod Engine 2 w inne miejsce, uruchom `Setup.bat` jesz
 
 **Usunięcie moda:** usuń folder moda i skrót. Pliki gry nie są modyfikowane — gra uruchomiona ze Steama działa zawsze bez moda.
 
-## Aktualizacje *(nowe w 1.2)*
+## Aktualizacje *(od 0.3.0)*
 
 Launcher przed każdym uruchomieniem gry sprawdza na GitHubie, czy jest nowsza wersja moda (trwa to najwyżej kilka sekund; bez internetu gra startuje normalnie). Jeśli jest, pyta, czy ją pobrać i zainstalować:
 - **Tak** — pobiera paczkę, wymienia pliki w folderze moda i uruchamia grę już na nowej wersji. Twoje ustawienia z `bin\er_engine.ini` zostają, launcher i ścieżka do Mod Engine 2 też. Poprzednia wersja trafia do `_backup\v<wersja>` (cofnięcie = skopiować jej zawartość z powrotem do folderu moda).
@@ -35,7 +35,7 @@ Launcher przed każdym uruchomieniem gry sprawdza na GitHubie, czy jest nowsza w
 
 Aktualizacja zmienia wyłącznie pliki w folderze moda — nie dotyka gry ani Mod Engine 2. Wyłączenie sprawdzania: `CheckForUpdates=0` w `bin\er_engine.ini`. Ręczne sprawdzenie: `powershell -ExecutionPolicy Bypass -File setup\Update.ps1 -Manual`.
 
-**Przejście z 1.0 / 1.1:** te wersje nie mają aktualizacji. Rozpakuj 1.2 do nowego folderu i uruchom `Setup.bat` jeszcze raz (nowy launcher zawiera sprawdzanie aktualizacji). Ustawienia z `bin\er_engine.ini` przenieś ręcznie, jeśli je zmieniałeś.
+**Przejście z 0.1.0 / 0.2.0:** te wersje nie mają aktualizacji. Rozpakuj nową wersję do nowego folderu i uruchom `Setup.bat` jeszcze raz (nowy launcher zawiera sprawdzanie aktualizacji). Ustawienia z `bin\er_engine.ini` przenieś ręcznie, jeśli je zmieniałeś.
 
 **Konfiguracja bez okna** (dla zaawansowanych): `Setup.bat -Silent -ModEngine2Path "D:\ścieżka\do\ModEngine2" [-Shortcut]`. Ręcznie, bez `Setup.bat`: `modengine2_launcher.exe -t dsr -c "<folder moda>\ER-Inspired_DSR_Remake.toml"`.
 
@@ -44,21 +44,31 @@ Aktualizacja zmienia wyłącznie pliki w folderze moda — nie dotyka gry ani Mo
 - **Graj wyłącznie offline.** Mod zmienia działanie gry w pamięci — gra online grozi banem. Mod nie ma własnej blokady sieci; przed uruchomieniem przełącz Steama w tryb offline albo ustaw w grze start w trybie offline.
 - Na innej wersji `DarkSoulsRemastered.exe` hooki się nie założą i mechaniki z DLL nie będą działać (log: `bin\er_engine.log`).
 
-## Nowe w 1.3
+## Nowe w 0.5.0
+
+- **Artorias — dopracowane efekty drugiej fazy** (sprawdzone w grze):
+  - Na mieczu przez całą drugą fazę widać gęstą mroczną aurę. W 0.4.0 efekt na mieczu w ogóle się nie wyświetlał. Z ciała aura zniknęła, żeby się z nią nie zlewała.
+  - Trzy skoki (salta zakończone skokiem z góry i dwa wielkie skoki) zapowiadają iskry z końca miecza w locie.
+  - Przy uderzeniu miecz wbija się w ziemię, a chwilę później wybucha mały mroczny wybuch z dźwiękiem, na 2 m wokół ostrza. W 0.4.0 ten wybuch nie zadawał obrażeń.
+  - Dobrze wyczuty przewrót omija i cios, i wybuch. Przy zbyt wczesnym przewrocie trafi cię wybuch.
+  - Skok po saltach ma dźwięk uderzenia miecza o ziemię, a pierwszy z dwóch wielkich skoków jest krótszy (12 m zamiast 15 m).
+  - Przejście do drugiej fazy rusza zaraz po zakończeniu bieżącego ciosu (wcześniej czasem z opóźnieniem do 3 s).
+
+## Nowe w 0.4.0
 
 - **Rycerz Artorias — przerobiona walka z drugą fazą** (sekcja „Artorias”). Wczesna wersja: efekty drugiej fazy (dym na mieczu, iskry przed uderzeniem, wybuch przy lądowaniu skoków) są jeszcze do sprawdzenia i dopracowania.
 - **Darmowy sprint:** wróg, który już walczy z graczem (goni go albo atakuje) w promieniu 40 m, też wyłącza darmowy sprint — nawet bez namierzenia i bez trafienia.
 - **Zawieszenie po przewrocie:** gdy postać po przewrocie stoi w miejscu mimo wciśniętego kierunku, mod przywraca jej swobodny ruch (`HangRepair`, sekcja „Ustawienia”). Naprawa na podstawie dwóch zarejestrowanych przypadków — jeszcze nie sprawdzona na prawdziwym zawieszeniu.
 
-## Artorias *(nowe w 1.3, wczesna wersja)*
+## Artorias *(od 0.4.0)*
 
 - **Faza 1** — tylko ataki z Dark Souls, bez wzmocnienia; krótsza niż oryginalna walka.
 - **Przejście** — gdy pasek HP spadnie do zera, Artorias nie ginie: klęka w animacji wzmocnienia (nie da się jej przerwać ani zadać obrażeń), odnawia całe HP i kończy wybuchem oraz dwoma pierścieniami mrocznych kul.
-- **Faza 2** — wzmocnienie na stałe (mocniejsze ciosy) i nowe ataki przeniesione z Elden Ring Nightreign: długie combo, szarże z cięciem, dwa wielkie skoki pod rząd, salta zakończone skokiem z ciosem z góry; skoki kończą się małym mrocznym wybuchem przy uderzeniu w ziemię.
+- **Faza 2** — wzmocnienie na stałe (mocniejsze ciosy) i nowe ataki przeniesione z Elden Ring Nightreign: długie combo, szarże z cięciem, dwa wielkie skoki pod rząd, salta zakończone skokiem z ciosem z góry. Na mieczu przez całą fazę mroczna aura; skoki zapowiadają iskry z końca miecza, a po wbiciu miecza w ziemię wybucha mały mroczny wybuch.
 - Obie fazy mają razem ok. 1,2× HP oryginalnego Artoriasa. Po zabiciu w fazie 2 Artorias daje swoją duszę bossa; dusze pojawiają się z kilkusekundowym opóźnieniem.
 - Wyłączenie drugiej fazy: `ArtoriasPhase2=0` w `bin\er_engine.ini` (ataki z Nightreign zostają w plikach, ale bez przejścia Artorias ginie przy 0 HP).
 
-## Nowe w 1.2
+## Nowe w 0.3.0
 
 - **Aktualizacje z poziomu launchera** (sekcja „Aktualizacje”).
 - **Sprint poza walką nie zużywa wytrzymałości** (jak w ER). Przewroty, skoki i ataki kosztują zawsze.
@@ -75,11 +85,11 @@ Aktualizacja zmienia wyłącznie pliki w folderze moda — nie dotyka gry ani Mo
 | **Skok z ER** | Animacje wybicia z Elden Ringa (z miejsca, w marszu, ze sprintu) z przysiadem i wysokością ok. 1,15 m. Sterowanie w locie: obrót i dosuwanie gałką/WASD. Osobny przycisk skoku z miejsca i w marszu. Skok z półki w dół zachowuje rozpęd. Bez przewrotu po lądowaniu. |
 | **Ataki z wyskoku z ER** *(wczesna wersja)* | Atak w trakcie skoku (R1 i R2, jedną ręką i oburącz) używa animacji ataków z wyskoku z Elden Ringa: zamach w locie, cios dokończony na ziemi, recovery w czasach ER. Kliknięcie tuż po skoku jest kolejkowane. 14 grup broni białej. |
 | **Przewrót we wszystkie strony** | Przy namierzonym celu przewrót w dowolnym kierunku względem kamery zamiast 4 kierunków (własna implementacja w `er_engine.dll`). Bufor klawisza uniku: unik wciśnięty tuż przed kierunkiem nie przepada. |
-| **Sprint przy namierzeniu** *(nowe w 1.1)* | Przy namierzonym celu przewrót wychodzi przy puszczeniu klawisza (jak w ER i jak w DSR bez namierzenia), więc przytrzymanie klawisza nie robi już przewrotu w bok ani w tył. Sprint przy namierzeniu działa na razie tylko w przód, jak w DSR. |
-| **Przewroty i backstepy z ER** | Animacje przewrotów (4 progi obciążenia × 4 kierunki) i backstepów z Elden Ringa, z czasami ER: szybsze wyjście z przewrotu, nietykalność 13 klatek. Od 1.1 każda akcja po przewrocie ma własny czas z ER (atak najwcześniej, potem przedmiot i kolejny unik, ruch, garda) — ciężkiego przewrotu nie da się już spamować. |
+| **Sprint przy namierzeniu** *(od 0.2.0)* | Przy namierzonym celu przewrót wychodzi przy puszczeniu klawisza (jak w ER i jak w DSR bez namierzenia), więc przytrzymanie klawisza nie robi już przewrotu w bok ani w tył. Sprint przy namierzeniu działa na razie tylko w przód, jak w DSR. |
+| **Przewroty i backstepy z ER** | Animacje przewrotów (4 progi obciążenia × 4 kierunki) i backstepów z Elden Ringa, z czasami ER: szybsze wyjście z przewrotu, nietykalność 13 klatek. Od 0.2.0 każda akcja po przewrocie ma własny czas z ER (atak najwcześniej, potem przedmiot i kolejny unik, ruch, garda) — ciężkiego przewrotu nie da się już spamować. |
 | **Chód, bieg i sprint z ER** | Animacje ruchu z Elden Ringa we wszystkich 9 zestawach postaw broni (bez broni, jedną ręką, oburącz, łuk, kusza, tarcza oburącz) i 3 progach obciążenia. |
 | **Tempo ataków z ER** | Ataki zostają z DSR, ale są odtwarzane szybciej w tych fragmentach, gdzie ER jest szybszy: wejście w cios do trafienia (maks. ×1,35) i końcówka do okna następnej akcji (maks. ×2). Nigdy nie zwalnia. Obejmuje R1 jedną ręką i oburącz, atak z biegu i z przewrotu dla 14 grup broni białej (bez pięści, tarcz, łuków, kusz i katalizatorów). R2: przyspieszona końcówka po trafieniu. Ciężkie bronie (wielkie młoty, wielkie topory) mają łagodniejsze przyspieszenie końcówki (maks. ×1,5). |
-| **Estus w ruchu** | Picie w marszu, ze skręcaniem (także z pustej flaszki); na czas picia postać zwalnia do wolnego chodu i nie sprintuje (jak w ER). Od 1.1 czasy po łyku jak w ER: atak, unik i garda 0,2 s po rozpoczęciu odkładania flaszki, pełny ruch po 0,3 s. |
+| **Estus w ruchu** | Picie w marszu, ze skręcaniem (także z pustej flaszki); na czas picia postać zwalnia do wolnego chodu i nie sprintuje (jak w ER). Od 0.2.0 czasy po łyku jak w ER: atak, unik i garda 0,2 s po rozpoczęciu odkładania flaszki, pełny ruch po 0,3 s. |
 | **Kamera przy namierzeniu** | Odległość, pole widzenia i wysokość kamery przy namierzonym celu jak w Elden Ringu. |
 
 ## Sterowanie
@@ -105,8 +115,8 @@ Aktualizacja zmienia wyłącznie pliki w folderze moda — nie dotyka gry ani Mo
 - Ataki z wyskoku: przy dotknięciu ziemi widać lekkie szarpnięcie postaci i mały przeskok animacji. Katana używa animacji miecza zakrzywionego, a zwykły atak toporem — animacji młota (brak przeliczonych animacji ER dla tych grup). Młoty nie mają R2 z wyskoku, pięści nie mają ataków z wyskoku wcale. Przy bardzo długim upadku zamach kończy się w powietrzu i dalej leci zwykłe spadanie.
 - Sprint przy namierzonym celu działa tylko w przód (jak w DSR); w bok i w tył postać idzie krokiem.
 - Przy piciu w marszu broń w ręce chwilę miga. Kosmetyczne.
-- Sporadycznie postać potrafi „zawisnąć” bez animacji (stoi mimo wciśniętego kierunku) do następnego trafienia lub akcji. Od 1.3 przypadek po przewrocie jest naprawiany automatycznie (`HangRepair`); jeśli zawieszenie nadal się zdarza, zgłoś je.
-- Artorias (wczesna wersja): efekty drugiej fazy do sprawdzenia — dym na mieczu może być słabo widoczny, wielkość wybuchu przy skokach jeszcze strojona. Przejście do drugiej fazy potrafi ruszyć z opóźnieniem do ok. 3 s, jeśli Artorias jest w środku serii ciosów. Balans sprawdzany tylko na NG+.
+- Sporadycznie postać potrafi „zawisnąć” bez animacji (stoi mimo wciśniętego kierunku) do następnego trafienia lub akcji. Od 0.4.0 przypadek po przewrocie jest naprawiany automatycznie (`HangRepair`); jeśli zawieszenie nadal się zdarza, zgłoś je.
+- Artorias: balans sprawdzany tylko na NG+; wybuch przy skokach wygląda jeszcze skromnie (mechanika jest ważniejsza). Przejście do drugiej fazy czeka, aż Artorias dokończy cios, którego nie da się przerwać.
 - Lekkie ślizganie przy lądowaniu po skoku; z bronią ręce przeskakują do innej pozy przy przejściu skok → spadanie.
 - Blok tarczą w sprincie wygląda nienaturalnie (animacja sprintu z ER).
 - Unik kończący się na ścianie przy namierzeniu potrafi sporadycznie zawiesić postać w pozie do następnej akcji.
