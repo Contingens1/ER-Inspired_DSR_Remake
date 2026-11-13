@@ -499,6 +499,9 @@ static void OmniRollOnPlayAnim(void* ctx, int anim, int layer, int a6) {
 }
 
 static bool g_freeStaminaOn = true;  // [Stamina] FreeOutOfCombat (see FreeStaminaTick)
+static bool g_itemHitCancelOn = true;  // [Items] HitCancelsItem (see ItemUpperOnPlayAnim)
+static DWORD g_itemBrokenAt = 0;       // item use broken by another animation (see DrinkActive)
+static bool IsItemWalkAnim(int a);     // defined below in the DrinkSlowWalk section
 
 static void LoadConfigIni() {
     char iniPath[MAX_PATH];
@@ -507,8 +510,9 @@ static void LoadConfigIni() {
     g_rollBufferOn = GetPrivateProfileIntA("Roll", "RollBuffer", 1, iniPath) != 0;
     g_lockSprintOn = GetPrivateProfileIntA("Roll", "LockOnSprint", 1, iniPath) != 0;
     g_freeStaminaOn = GetPrivateProfileIntA("Stamina", "FreeOutOfCombat", 1, iniPath) != 0;
-    Log("config: OmniRoll=%d RollBuffer=%d LockOnSprint=%d FreeOutOfCombat=%d (%s)", g_omniRollOn ? 1 : 0,
-        g_rollBufferOn ? 1 : 0, g_lockSprintOn ? 1 : 0, g_freeStaminaOn ? 1 : 0, iniPath);
+    g_itemHitCancelOn = GetPrivateProfileIntA("Items", "HitCancelsItem", 1, iniPath) != 0;
+    Log("config: OmniRoll=%d RollBuffer=%d LockOnSprint=%d FreeOutOfCombat=%d HitCancelsItem=%d (%s)", g_omniRollOn ? 1 : 0,
+        g_rollBufferOn ? 1 : 0, g_lockSprintOn ? 1 : 0, g_freeStaminaOn ? 1 : 0, g_itemHitCancelOn ? 1 : 0, iniPath);
 }
 
 static bool IsMoveKey(int c) { return c == 'W' || c == 'A' || c == 'S' || c == 'D'; }
@@ -1028,9 +1032,29 @@ static void EnemyProbeTick() {
     }
 }
 
+// A hit while drinking: the patched ESD plays the item animation on the upper body (layers 6 / 18) and the
+// game's damage reaction (2000-2099 on layers 11 / 26) does not end it - a knockdown then ran for 3 s with
+// the torso still held by the drink pose (log 2026-11-13: 2026 at 175.06 s, layer 6 released at 178.02 s).
+// Vanilla drinks on the full body, where the reaction replaces it. Here the item animation is ended by
+// hand as soon as the reaction starts.
+static int g_itemUpperAnim = -1;  // item animation the player currently has on layer 6
+static void ItemUpperOnPlayAnim(void* ctx, void* out, int anim, int layer, char a5, int a6) {
+    if (!g_playerAnimCtx || ctx != g_playerAnimCtx) return;
+    if (layer == 6) { g_itemUpperAnim = IsItemWalkAnim(anim) ? anim : -1; return; }
+    if (layer != 11 || anim < 2000 || anim > 2099 || g_itemUpperAnim < 0 || !g_itemHitCancelOn) return;
+    Log("[%7lu ms] item: hit reaction %d during item anim %d - ending the upper-body animation",
+        GetTickCount() - g_t0, anim, g_itemUpperAnim);
+    g_itemUpperAnim = -1;
+    DWORD now = GetTickCount();
+    g_itemBrokenAt = now ? now : 1;  // slow walk off (DrinkActive)
+    g_origPlayAnim(ctx, out, -1, 6, a5, a6, 1);
+    g_origPlayAnim(ctx, out, -1, 18, a5, a6, 0);
+}
+
 static void* __fastcall PlayAnimDetour(void* ctx, void* out, int a3, int a4, char a5, int a6, int a7) {
     if (kDiag && a3 >= 0) LogFirstUse(a3, a4);
     if (kDiag) EnemyProbeOnPlayAnim(ctx, a3, a4);
+    ItemUpperOnPlayAnim(ctx, out, a3, a4, a5, a6);
     // Diagnostyka: kazde zlecenie na warstwie glownej (takze koniec animacji, a3 = -1), z ctx - gracz ma ten sam ctx co skok.
     if (kDiag && (a4 == 7 || a4 == 23))
         Log("[%7lu ms] L%d ctx=%p anim=%d a5=%d a6=%d a7=%d%s", GetTickCount() - g_t0, a4, ctx, a3, a5, a6, a7,
@@ -1953,7 +1977,6 @@ constexpr DWORD kDrinkPartMaxMs = 3000;
 // change and the 3 s failsafe used to lift the cap after 5-6 sips. A chain gets a long limit instead; a drink
 // broken by another full-body animation is detected directly (g_itemBrokenAt, set in PlayAnimDetour).
 constexpr DWORD kDrinkChainMaxMs = 22000;
-static DWORD g_itemBrokenAt = 0;
 
 // Item animations the patched ESD plays on the upper body: Estus 7585-7589, crushed items 7500 (souls)
 // and 7501 (humanity).
