@@ -287,6 +287,7 @@ static bool g_momActive = false;        // rozped przejety (faza spadania po sko
 static int AirAttackSubstitute(void* ctx, int anim, int layer, int a6);  // nizej: atak w locie -> atak z wyskoku ER
 static void AirAttackTick(float dt);  // nizej: ladowanie w ataku z wyskoku
 static void AirAttackBuffer(BYTE* ctx);  // nizej: klik ataku przed otwarciem okna w skoku
+static void PickupTick();  // below: ends the upper-body pick-up copy ([Items] PickupWhileMoving)
 static void AirAttackAfterPlayAnim(int anim, int layer);  // nizej: ladowanie po tym, jak gra konczy atak
 static bool g_airAtkMoveLock = false;   // recovery po ladowaniu ataku z wyskoku: osie ruchu = 0
 static float g_axis[2] = {};           // ostatnie osie ruchu (hook 0x1A3700/0x1A3750)
@@ -452,6 +453,8 @@ static void LockOnSprintPostInput(BYTE* ctx, float dt, void* p3) {
 // to show whether the game rewrites +0x21D each frame and whether the run speed reaches sprint speed.
 static bool g_lockSprintFreeOn = false;  // er_engine.ini [Roll] LockOnSprintFree
 static bool g_landStartTimeOn = false;   // er_engine.ini [Jump] LandStartTime (jump attack section)
+static float g_landBlendSec = 0.f;       // [Jump] LandBlend (ms): swing -> landing pose blend, 0 = the game's 0.03 s
+static float g_landSpeedCap = 0.f;       // [Jump] LandSpeedCap (m/s): horizontal speed cap after touchdown, 0 = off
 static bool g_lockFreeForced = false;
 static BYTE g_lockFreeSaved = 0;
 
@@ -617,6 +620,7 @@ static bool g_artOn = false;         // [Bosses] ArtoriasPhase2, resolved (see A
 static bool g_hangRepairOn = true;   // [Fixes] HangRepair (see HangRepairTick)
 static bool g_hangRepairV2On = false;  // [Fixes] HangRepairV2 (test): silent move-flag drops, faster repair
 static bool g_itemHitCancelOn = true;  // [Items] HitCancelsItem (see ItemUpperOnPlayAnim)
+static bool g_pickupMoveOn = false;    // [Items] PickupWhileMoving (see PickupOnPlayAnim)
 
 // [Bosses] ArtoriasPhase2: 1 on, 0 off, 2 auto (default) = on only when this run loads the Artorias boss files:
 // the release layout (bin\er_engine.dll next to files\chr\c4100.anibnd.dcx, the boss files ship inside the main
@@ -655,12 +659,17 @@ static void LoadConfigIni() {
     g_lockSprintOn = GetPrivateProfileIntA("Roll", "LockOnSprint", 1, iniPath) != 0;
     g_freeStaminaOn = GetPrivateProfileIntA("Stamina", "FreeOutOfCombat", 1, iniPath) != 0;
     g_itemHitCancelOn = GetPrivateProfileIntA("Items", "HitCancelsItem", 1, iniPath) != 0;
+    g_pickupMoveOn = GetPrivateProfileIntA("Items", "PickupWhileMoving", 0, iniPath) != 0;
+    Log("config: PickupWhileMoving=%d", g_pickupMoveOn ? 1 : 0);
     g_hangRepairOn = GetPrivateProfileIntA("Fixes", "HangRepair", 1, iniPath) != 0;
     g_hangRepairV2On = GetPrivateProfileIntA("Fixes", "HangRepairV2", 0, iniPath) != 0;
     g_attackFaceOn = GetPrivateProfileIntA("Roll", "AttackFaceTarget", 0, iniPath) != 0;
     g_lockSprintFreeOn = GetPrivateProfileIntA("Roll", "LockOnSprintFree", 0, iniPath) != 0;
     g_landStartTimeOn = GetPrivateProfileIntA("Jump", "LandStartTime", 0, iniPath) != 0;
-    Log("config: LandStartTime=%d", g_landStartTimeOn ? 1 : 0);
+    g_landBlendSec = GetPrivateProfileIntA("Jump", "LandBlend", 0, iniPath) / 1000.f;
+    g_landSpeedCap = static_cast<float>(GetPrivateProfileIntA("Jump", "LandSpeedCap", 0, iniPath));
+    Log("config: LandStartTime=%d LandBlend=%.0f ms LandSpeedCap=%.0f m/s", g_landStartTimeOn ? 1 : 0,
+        g_landBlendSec * 1000.f, g_landSpeedCap);
     Log("config: AttackFaceTarget=%d LockOnSprintFree=%d", g_attackFaceOn ? 1 : 0, g_lockSprintFreeOn ? 1 : 0);
     Log("config: HangRepair=%d HangRepairV2=%d", g_hangRepairOn ? 1 : 0, g_hangRepairV2On ? 1 : 0);
     char artWhy[MAX_PATH + 64];
@@ -1277,6 +1286,7 @@ static void __fastcall InputDetour(void* ctx, float dt, void* p3) {
     ArtoriasPhaseTick(p3);
     HangRepairTick(p3);
     AttackSpeedTick(dt);
+    PickupTick();
     AirControlTick(dt);
     AirMomentumTick(dt);
     if (kDiag) { PhysProbeTick(); EnemyProbeTick(); HangProbeTick(static_cast<const BYTE*>(ctx), p3); }
@@ -1595,7 +1605,80 @@ static void HangRepairOnPlayAnim(int anim, int layer) {
     }
 }
 
+// --- Pick-up while moving ([Items] PickupWhileMoving, test, default 0) ------------------------------
+// The item pick-ups 7410 / 7411 / 7412 run on layers 10/25 (event layer, the whole body, movement locked by the
+// action until the animation ends; test 2026-11-14: 7412 then 7410 with a lock up to 2.77 s). As in Elden Ring the
+// player keeps walking: the request is played as the walkable copy ID+30 (tools/apply_fast_pickup.py
+// --walk-clone 30: JT37 movement possible, no turning lock / i-frames / ignore gravity) on the upper-body layers
+// 5/17, like the walking Estus. Nothing then plays on 10/25. The copy is ended when the game ends the pick-up
+// (but not before kPickupMinMs), when the player attacks / rolls (layer 7) or is hit (layer 11), at the latest
+// after kPickupMaxMs (an upper-body layer otherwise keeps its last pose).
+constexpr DWORD kPickupMinMs = 900, kPickupMaxMs = 2300;
+static bool g_pickupOnUpper = false;
+static DWORD g_pickupAt = 0, g_pickupEndAt = 0;
+static void* g_pickupCtx = nullptr;
+static void* g_pickupOut = nullptr;
+static char g_pickupA5 = 0;
+static int g_pickupA6 = 0;
+
+static void PickupEndUpper(const char* why) {
+    if (!g_pickupOnUpper || !g_origPlayAnim) return;
+    g_pickupOnUpper = false;
+    g_pickupEndAt = 0;
+    unsigned long long out[2] = {};
+    g_origPlayAnim(g_pickupCtx, out, -1, 5, g_pickupA5, g_pickupA6, 2);
+    g_origPlayAnim(g_pickupCtx, out, -1, 17, g_pickupA5, g_pickupA6, 0);
+    Log("[%7lu ms] pickup: upper-body copy ended after %lu ms (%s)", GetTickCount() - g_t0, GetTickCount() - g_pickupAt, why);
+}
+
+static void PickupTick() {
+    if (!g_pickupOnUpper) return;
+    DWORD now = GetTickCount();
+    if (g_pickupEndAt && now >= g_pickupEndAt) PickupEndUpper("game ended the pick-up");
+    else if (now - g_pickupAt >= kPickupMaxMs) PickupEndUpper("time limit");
+}
+
+// Returns true when the request was replaced (the caller returns without playing the original).
+static bool PickupOnPlayAnim(void* ctx, void* out, int a3, int a4, char a5, int a6, void** ret) {
+    bool player = ctx == g_playerAnimCtx || ctx == g_rollCtx;
+    if (a3 >= 7410 && a3 <= 7412 && (a4 == 10 || a4 == 25))
+        Log("[%7lu ms] pickup: anim %d layer %d (ctx %p, player %d, switch %d)", GetTickCount() - g_t0, a3, a4, ctx,
+            player ? 1 : 0, g_pickupMoveOn ? 1 : 0);
+    if (!g_pickupMoveOn || !player) return false;
+    DWORD now = GetTickCount();
+    if (a3 >= 7410 && a3 <= 7412 && (a4 == 10 || a4 == 25)) {
+        int upper = a4 == 10 ? 5 : 17;
+        if (a4 == 10) {
+            g_pickupOnUpper = true;
+            g_pickupAt = now ? now : 1;
+            g_pickupEndAt = 0;
+            g_pickupCtx = ctx;
+            g_pickupOut = out;
+            g_pickupA5 = a5;
+            g_pickupA6 = a6;
+        }
+        *ret = g_origPlayAnim(ctx, out, a3 + 30, upper, a5, a6, upper == 5 ? 2 : 0);
+        if (a4 == 10) Log("[%7lu ms] pickup: %d on layers 10/25 -> %d on the upper body 5/17", now - g_t0, a3, a3 + 30);
+        return true;
+    }
+    if (!g_pickupOnUpper) return false;
+    if (a3 == -1 && a4 == 10) {  // the game ends the pick-up: keep the copy at least kPickupMinMs
+        DWORD due = g_pickupAt + kPickupMinMs;
+        g_pickupEndAt = now >= due ? now : due;
+        Log("[%7lu ms] pickup: game ended the pick-up after %lu ms", now - g_t0, now - g_pickupAt);
+    } else if (a3 >= 0 && (a4 == 7 || a4 == 11)) {
+        PickupEndUpper(a4 == 7 ? "new action" : "hit");
+    } else if (a3 >= 0 && a4 == 5) {
+        g_pickupOnUpper = false;  // something else took the upper body (item, guard)
+    }
+    return false;
+}
+
 static void* __fastcall PlayAnimDetour(void* ctx, void* out, int a3, int a4, char a5, int a6, int a7) {
+    {
+        void* ret = nullptr;
+        if (PickupOnPlayAnim(ctx, out, a3, a4, a5, a6, &ret)) return ret;
+    }
     if (ctx == g_playerAnimCtx || ctx == g_rollCtx) HangRepairOnPlayAnim(a3, a4);
     if (kDiag && a3 >= 0) LogFirstUse(a3, a4);
     if (kDiag) { EnemyProbeOnPlayAnim(ctx, a3, a4); }
@@ -1927,9 +2010,12 @@ static void AirAttackReplayNow(bool fromGame) {  // gra skasowala nasze ladowani
     g_airAtkLandAt = now;
     AnimRecordProbeStart("landing started");
     if (g_landStartTimeOn && g_airAtkLandT0 > 0.01f) {
+        // +0x28 = blend from the swing pose (the game uses 0.03 s: on flat ground or downhill the body drops to the
+        // landing pose in two frames - player test 2026-11-14 "dociagniecie do ziemi")
         for (int layer : {7, 23})
             if (BYTE* rec = AnimLayerRecord(g_airAtkCtx, layer)) __try {
                 *reinterpret_cast<float*>(rec + 0x5C) = g_airAtkLandT0;
+                if (g_landBlendSec > 0.f) *reinterpret_cast<float*>(rec + 0x28) = g_landBlendSec;
             } __except (EXCEPTION_EXECUTE_HANDLER) {}
         g_airAtkFfLeft = 0.f;
         Log("[%7lu ms] jump attack: landing %d started with +0x5C = %.2f s (no speed spike)", now - g_t0, g_airAtkLandAnim,
@@ -1965,6 +2051,28 @@ static void AirAttackTick(float dt) {
     DWORD now = GetTickCount();
     if (g_airAtkState == kAtkLand) {
         if (g_airAtkReplay && now - g_airAtkReplayAt > 60) AirAttackReplayNow();  // -1 na warstwie 23 nie przyszlo
+        // Speed cap (test 2026-11-14, sprint jump attacks): after touchdown the horizontal proxy velocity grows
+        // 2.6 -> 4 -> 6.5 -> 13 -> 39 m/s within ~90 ms (feeding on the previous frame's +0xD0); the guard below
+        // only undid the last 0.5-0.65 m step, after a ~0.4 m slide. Capping proxy +0x60/+0x68 and +0xD0/+0xD8
+        // stops the growth at its start.
+        if (g_landSpeedCap > 0.f && now - g_airAtkTouchAt < kLandJumpGuardMs)
+            if (BYTE* pos = ChrPosData()) __try {
+                auto proxy = *reinterpret_cast<BYTE**>(pos + 0x38);
+                for (int pass = 0; pass < 2; ++pass) {
+                    BYTE* base = pass == 0 ? pos + 0xD0 : (reinterpret_cast<ULONG_PTR>(proxy) >= 0x10000 ? proxy + 0x60 : nullptr);
+                    if (!base) continue;
+                    float* vx = reinterpret_cast<float*>(base);
+                    float* vz = reinterpret_cast<float*>(base + 8);
+                    float m = sqrtf(*vx * *vx + *vz * *vz);
+                    if (m > g_landSpeedCap) {
+                        if (pass == 1)
+                            Log("[%7lu ms] jump attack: landing speed %.1f m/s capped to %.0f (%lu ms after touchdown)", now - g_t0, m,
+                                g_landSpeedCap, now - g_airAtkTouchAt);
+                        *vx *= g_landSpeedCap / m;
+                        *vz *= g_landSpeedCap / m;
+                    }
+                }
+            } __except (EXCEPTION_EXECUTE_HANDLER) {}
         if (BYTE* pos = ChrPosData()) __try {  // undo a one-frame forward jump right after touchdown
             float* x = reinterpret_cast<float*>(pos + 0x10);
             float* z = reinterpret_cast<float*>(pos + 0x18);

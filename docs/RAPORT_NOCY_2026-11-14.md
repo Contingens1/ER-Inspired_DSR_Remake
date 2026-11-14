@@ -28,7 +28,10 @@ Wszystkie testy oprócz 4–6 startujesz z `dist\mods\bossy_nightreign\launch_nr
    - potem F8 (w logu `lock-on sprint probe` i `free movement forced`);
    - krótkie wciśnięcie dalej ma dawać przewrót.
 10. **Estus bez broni w ręce (§14):** `dist\mods\bossy_nightreign\launch_nr_estus_test.bat`. Picie w miejscu i w marszu, z bronią w prawej ręce: czy broń znika na czas picia i wraca po nim, czy w marszu nic nie miga.
-11. **Decyzje bez gry:**
+11. **Po zamknięciu gry (§15), `launch_nr_estus_test.bat` albo `launch_nr_artorias_test.bat`:**
+   - podnoszenie w marszu: czy postać idzie dalej, czy przedmiot trafia do ekwipunku, F8;
+   - atak z wyskoku ze sprintu na płaskim i w dół: czy zniknął ślizg i dociągnięcie do ziemi, F8.
+12. **Decyzje bez gry:**
    - postura: czy zaczynamy od Black Knighta (§9).
 
 ## 1. Zawieszenie postaci
@@ -386,3 +389,26 @@ Wszystko w paczce nocnej: DLL `c0000_er_engine_night\bin`, animacje `bossy_night
 - **Niesprawdzone w grze:**
   - czy gra stosuje skalę kości z warstwy górnej części ciała (5), na której mod odtwarza picie;
   - czy „mignięcie w marszu” znika. Jeśli nie, jego przyczyną jest coś innego, np. przejście między warstwami przy ruszaniu i zatrzymaniu.
+
+## 15. Po teście gracza 14.11 (rano): lądowanie ataku z wyskoku i podnoszenie w ruchu
+**Lądowanie (log, 11 ataków z wyskoku ze sprintu, wielki młot oburącz):**
+- Lądowanie startuje od czasu zamachu (`+0x5C`).
+- Po każdym lądowaniu ze sprintu prędkość pozioma rośnie lawinowo przez ok. 90 ms: 2,6 → 4 → 6,5 → 13 → 39 m/s. Rośnie z prędkości z poprzedniej klatki (`+0xD0`).
+- Strażnik cofał dopiero ostatni krok (0,51–0,67 m, 78–110 ms po dotknięciu), a wcześniej postać ześlizgiwała się o ok. 0,4 m.
+- Przy skoku w miejscu tego nie było.
+- Przejście z pozy zamachu w pozę lądowania trwa 0,03 s (`+0x28`). To pasuje do zgłoszenia: na płaskim i w dół widać dociągnięcie do ziemi, pod górę mniej.
+- **Poprawki (paczka nocna):**
+  - `[Jump] LandBlend=150`: przejście 150 ms;
+  - `[Jump] LandSpeedCap=5`: przez 0,4 s po dotknięciu prędkość pozioma (pośrednik `+0x60/+0x68` i `+0xD0/+0xD8`) najwyżej 5 m/s, log `landing speed … capped`.
+
+**Podnoszenie (log):**
+- 7412 (kucnięcie) skończyło się po 0,67 s, czyli okna od 0,5 s działają.
+- Zaraz po nim gra zagrała 7410: drugie podniesienie z błyskiem przedmiotu, 3,3 s, blokada do 2,77 s. To był pozostały „freeze”.
+- Podnoszenie nie przechodzi przez skrypt stanów gracza (ESD), tylko przez warstwy 10/25 (animacje zdarzeń). Ruch blokuje akcja gry. JT8 = nietykalność, JT27 = wyłączona grawitacja, JT7 = blokada obrotu.
+- **Poprawki (paczka nocna):**
+  - `tools\apply_fast_pickup.py --anims 7410 7411 7412 --walk-clone 30`: okna przerwania od 0,5 s także w 7410 i 7411. Nowe 7440–7442 to kopie do chodzenia: JT37 „ruch możliwy”, bez JT7/8/27/39, ten sam HKX.
+  - `[Items] PickupWhileMoving=1`: DLL gra 7440–7442 na warstwach górnej części ciała 5/17 zamiast 7410–7412 na 10/25.
+  - Zakończenie kopii: gdy gra kończy podnoszenie (nie wcześniej niż po 0,9 s), przy ataku, przewrocie albo trafieniu, najpóźniej po 2,3 s.
+  - Log: `pickup: …`.
+  - **Niewiadome:** czy akcja gry zwolni ruch, skoro na 10/25 nic nie gra, i czy przedmiot trafi do ekwipunku.
+- Nowa DLL czekała w `work\dll_staging\bin` (gra była uruchomiona). Kopiuje się do `c0000_er_engine_night\bin` po zamknięciu gry.
