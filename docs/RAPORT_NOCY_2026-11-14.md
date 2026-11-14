@@ -4,8 +4,6 @@ Gałąź `night-2026-11-14`. Bez commitów na `main` i bez wydań. Nocna DLL: `d
 
 ## Testy na rano (w kolejności)
 
-**Uwaga o zapisie:** przy pomiarze skoku (03:4x) postać spadła z urwiska w Darkroot Garden i zginęła. Dusze 0, nic nie przepadło, ale gra zapisała odrodzenie przy ognisku. Jeśli chcesz wrócić do miejsca sprzed nocy, przywróć zapis z Save Organizera.
-
 Wszystkie testy oprócz 4–6 startujesz z `dist\mods\bossy_nightreign\launch_nr_artorias_test.bat` (nocna DLL i paczka podnoszenia).
 
 1. **Zawieszenie: osłona po wczytaniu** (`HangRepairV2=1`):
@@ -29,7 +27,8 @@ Wszystkie testy oprócz 4–6 startujesz z `dist\mods\bossy_nightreign\launch_nr
    - namierzyć wroga, trzymać klawisz uniku z gałką w bok, potem w tył (ponad 0,5 s). Postać powinna biec sprintem tam, gdzie gałka, z kamerą na wrogu;
    - potem F8 (w logu `lock-on sprint probe` i `free movement forced`);
    - krótkie wciśnięcie dalej ma dawać przewrót.
-10. **Decyzje bez gry:**
+10. **Estus bez broni w ręce (§14):** `dist\mods\bossy_nightreign\launch_nr_estus_test.bat`. Picie w miejscu i w marszu, z bronią w prawej ręce: czy broń znika na czas picia i wraca po nim, czy w marszu nic nie miga.
+11. **Decyzje bez gry:**
    - postura: czy zaczynamy od Black Knighta (§9).
 
 ## 1. Zawieszenie postaci
@@ -371,3 +370,19 @@ Wszystko w paczce nocnej: DLL `c0000_er_engine_night\bin`, animacje `bossy_night
 - Kompilacja release (`/DER_DIAG=0`): OK.
 
 **Uwaga do scalenia z main:** `jump_attack_table.h` ma teraz wiersze pięści, R2 młota i nowe czasy katany. DLL zbudowana z tej gałęzi wymaga animacji z `files_c0000_night`. Przy scalaniu trzeba puścić `add_jump_attacks.py` (wszystkie grupy) na `dist\mods\c0000_er_engine\files\chr`.
+
+## 14. Estus: broń w ręce przy piciu (14.11, dzień)
+- **Przyczyna (z danych):** w głównym modzie klipy picia 7585–7589 to animacje ER 050110–050114 z Player Animations Repository.
+  - Vanilla DSR chowa broń w samej animacji: skala kości `R_Weapon` = 0 (7585 od 0,2 s, 7586 całe, 7587 do 0,8 s; tak samo 7000–7113).
+  - ER chowa broń zdarzeniem TAE 710 `HideEquippedWeapon`, którego DS1 nie ma. Klipy z repozytorium mają więc skalę 1 i broń zostaje w ręce.
+- **Poprawka (paczka testowa, główny mod bez zmian):**
+  - `tools\er_player_port.py --group 0 --clips 50110:7585 50111:7586 50112:7587 50113:7588 50114:7589 --hide-weapon --out work/estus_port --dsr-names`:
+    - te same ruchy ER przeniesione na szkielet DSR;
+    - `R_Weapon` ma skalę 0 w oknach 710 z TAE ER: 7585 0,20–0,83 s, 7586 całe, 7587 0–0,67 s, 7588 0–1,87 s, 7589 0,17–2,33 s.
+  - `tools\apply_estus_hide.py`: `c0000_a00_md.anibnd.dcx` głównego moda z tymi 5 klipami → `bossy_nightreign\files_c0000_estus\chr`.
+  - Launcher `launch_nr_estus_test.bat` = paczka nocna + ten folder.
+  - `nr_boss_port.py`: nowa opcja `--scale-zero NR:KOŚĆ:T0:T1`.
+- **Sprawdzone narzędziem:** skala w plikach zgodna z oknami; podgląd 7586: ręka z flaszką na wysokości twarzy.
+- **Niesprawdzone w grze:**
+  - czy gra stosuje skalę kości z warstwy górnej części ciała (5), na której mod odtwarza picie;
+  - czy „mignięcie w marszu” znika. Jeśli nie, jego przyczyną jest coś innego, np. przejście między warstwami przy ruszaniu i zatrzymaniu.

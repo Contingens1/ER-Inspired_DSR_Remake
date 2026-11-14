@@ -164,7 +164,17 @@ def port_one(ctx, nr_id: int, dsr_id: int, out: Path) -> dict:
     drm_end = dc.get_reference_frame_samples()[-1] if has_drm else np.zeros(4)
     if erm is not None and not has_drm and float(np.abs(erm).max()) < 1e-3:
         erm = None
-    frames = [[TRS(V3(T[f, b]), Qt(Q[f, b]), V3.one()) for b in range(B)] for f in range(F)]
+    # --scale-zero: bones hidden (scale 0) inside time windows, e.g. R_Weapon while the player drinks (ER hides the
+    # weapon with TAE 710 HideEquippedWeapon, DS1 by scaling the R_Weapon bone to 0 in the animation itself)
+    hide = {}
+    for bname, t0, t1 in ctx.get("scale_zero", {}).get(nr_id, []):
+        if bname in dnames:
+            tf = np.linspace(0.0, nr_dur, F)
+            hide.setdefault(dnames.index(bname), np.zeros(F, bool))
+            hide[dnames.index(bname)] |= (tf >= t0 - 1e-3) & (tf <= t1 + 1e-3)
+    zero = V3(np.zeros(3))
+    frames = [[TRS(V3(T[f, b]), Qt(Q[f, b]), zero if b in hide and hide[b][f] else V3.one()) for b in range(B)]
+              for f in range(F)]
     anim = d.AnimationHKX.from_minimal_data_interleaved(
         frames, list(range(B)), root_motion_array=None if erm is None else erm.astype(np.float32),
         original_skeleton_name=dc.hkx_binding.originalSkeletonName, track_names=dnames).to_spline_hkx()
@@ -417,6 +427,8 @@ def main(argv=None) -> int:
     ap.add_argument("--redo", type=int, nargs="*", default=[], metavar="NR",
                     help="with --reuse: port these NR clips again anyway")
     ap.add_argument("--tag", default="", help="suffix of the files_<dsr> folder and of the report (variants)")
+    ap.add_argument("--scale-zero", action="append", default=[], metavar="NR:BONE:T0:T1",
+                    help="port: scale this DSR bone to 0 between T0 and T1 s of the NR clip (hidden weapon)")
     args = ap.parse_args(argv)
 
     load_havok()
@@ -483,7 +495,10 @@ def main(argv=None) -> int:
                d2e=d2e, e2d=e2d, S=S, dref=dref, dPr=dPr, dRr=dRr, eref=eref, ePr=ePr, eRr=eRr, DD=DD, ED=ED,
                comp_for=comp_for, pelvis=pelvis, master_carries=master_carries,
                rm_scale={int(s.split(":")[0]): float(s.split(":")[1]) for s in args.rm_scale},
-               rm_straighten=set(args.rm_straighten), rm_window={})
+               rm_straighten=set(args.rm_straighten), rm_window={}, scale_zero={})
+    for s in args.scale_zero:
+        nid, bone, t0, t1 = s.split(":")
+        ctx["scale_zero"].setdefault(int(nid), []).append((bone, float(t0), float(t1)))
     for s in args.rm_scale_window:
         nid, t0, t1, k = s.split(":")
         ctx["rm_window"].setdefault(int(nid), []).append((float(t0), float(t1), float(k)))

@@ -53,7 +53,7 @@ Stan na 2026-11-13. Skrócona wersja: tylko to, co jest aktualne. Pełna histori
 - Skok: ślizganie po lądowaniu; przeskok rąk z bronią 900 → 1550 (warstwy 8/24); 2–4 klatki zwolnienia przy zeskoku z półki ze sprintu; **przy dłuższym spadaniu (daleki skok w dół) fizyka opadania się rozjeżdża** (zgłoszenie gracza 2026-11-13, szczegóły do zebrania z logu `fiz +`).
 - Blok tarczą w sprincie wygląda nienaturalnie (animacja sprintu ER na górze ciała).
 - Sprint przy namierzeniu tylko w przód (jak vanilla). **2026-11-14 (gałąź nocna, NIE testowane):** eksperyment `[Roll] LockOnSprintFree` (swobodny ruch `p3+0x21D` = 1 na czas sprintu) + sonda `lock-on sprint probe`; raport nocy §13.
-- Estus: broń widoczna w ręce przy piciu, mignięcie w marszu.
+- Estus: broń widoczna w ręce przy piciu, mignięcie w marszu. **2026-11-14:** przyczyna: klipy picia 7585–7589 z repozytorium (ER 050110–050114) nie mają skali 0 na `R_Weapon` (ER chowa broń zdarzeniem TAE 710, DS1 skalą kości). Paczka testowa `launch_nr_estus_test.bat` z własnym przeniesieniem i ukrytą bronią w oknach ER (raport nocy §14); NIE testowane w grze.
 - **Centipede Demon (paczka NR, test 2026-11-13):** przy atakach z wyrzucaniem macek nie da się go trafić (wygląda na brak lub odjechanie hitboxa); przy jednym z ataków dystansowych (prawdopodobnie plucie) model wykręca się i częściowo chowa pod lawę. Przyczyna niezbadana; poza tym `files_c5200` się nie psuje.
 - Pad (DualSenseX → X360) bywa ignorowany także bez ME2 i DLL — poza zakresem.
 
