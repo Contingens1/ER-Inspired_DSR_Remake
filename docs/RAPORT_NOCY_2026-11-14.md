@@ -412,3 +412,17 @@ Wszystko w paczce nocnej: DLL `c0000_er_engine_night\bin`, animacje `bossy_night
   - Log: `pickup: …`.
   - **Niewiadome:** czy akcja gry zwolni ruch, skoro na 10/25 nic nie gra, i czy przedmiot trafi do ekwipunku.
 - Nowa DLL czekała w `work\dll_staging\bin` (gra była uruchomiona). Kopiuje się do `c0000_er_engine_night\bin` po zamknięciu gry.
+
+## 16. Estus po teście gracza 14.11: T-pose ręki i mignięcie broni
+- **Zgłoszenie:** broń znika, ale miga w połowie picia. Ręka od łokcia prosta, flaszka nie dochodzi do ust, po wypiciu chwila T-pose.
+- **Przyczyna T-pose (z danych):** DSR skóruje przedramię także do `L/R_ForeTwist`. To dziecko ramienia, w łokciu. ER ma tę kość pod nazwą `L/R_ForeArmTwist`, więc przy przenoszeniu nie została dopasowana i stała w pozie spoczynkowej, w linii ramienia.
+  - Kąt między przedramieniem a tą kością: w starej katanie średnio 15–35°, do 53°; po poprawce 0°.
+  - Ten sam błąd był w paczce Capry (`L ForeTwist`, `R ForeTwist`).
+- **Przyczyna mignięcia (log):** łatany ESD kończy etap picia (-1 na warstwach 6/18) i w tej samej klatce zaczyna następny (7585 → 7586 → 7587). Nowy etap wchodzi płynnym przejściem z warstwy pod spodem, a tam broń jest w ręce.
+- **Poprawki:**
+  - `nr_boss_port.py --bone-alias DSR=ER`; `er_player_port.py` zawsze podaje `L/R_ForeTwist=L/R_ForeArmTwist`.
+  - Estus przeniesiony ponownie (`files_c0000_estus`), katana też: ataki z wyskoku w `files_c0000_night`; tabela bez zmian.
+  - Capra przeniesiona ponownie z aliasami: `files_c2240_omen`, kopia sprzed w `work\c2240.anibnd.omen_PRE_TWIST.dcx`.
+  - DLL `[Items] DrinkStageBlend=0`: etapy 7586, 7587 i 7588 dostają czas przejścia 0 w rekordzie warstwy (`+0x28`). Klipy ER są ciągłe między etapami, więc przejście nie jest potrzebne. Log `drink: stage … blend`.
+- DLL czeka w `work\dll_staging\bin` i kopiuje się do `c0000_er_engine_night\bin` po zamknięciu gry.
+- **Test:** `launch_nr_estus_test.bat`, picie w miejscu i w marszu. Ręka i flaszka przy ustach, bez T-pose, broń bez mignięcia. Przy okazji: atak z wyskoku katana, jeśli jest pod ręką.

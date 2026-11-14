@@ -427,6 +427,8 @@ def main(argv=None) -> int:
     ap.add_argument("--redo", type=int, nargs="*", default=[], metavar="NR",
                     help="with --reuse: port these NR clips again anyway")
     ap.add_argument("--tag", default="", help="suffix of the files_<dsr> folder and of the report (variants)")
+    ap.add_argument("--bone-alias", action="append", default=[], metavar="DSR=NR",
+                    help="map a DSR bone to an NR bone of another name (player: R_ForeTwist=R_ForeArmTwist)")
     ap.add_argument("--scale-zero", action="append", default=[], metavar="NR:BONE:T0:T1",
                     help="port: scale this DSR bone to 0 between T0 and T1 s of the NR clip (hidden weapon)")
     args = ap.parse_args(argv)
@@ -455,8 +457,16 @@ def main(argv=None) -> int:
     dnames, enames = [b.name for b in dsk.bones], [b.name for b in esk.bones]
     dpar, epar = parents_of(dsk), parents_of(esk)
     en = {norm(n): i for i, n in reversed(list(enumerate(enames)))}
-    d2e = {i: (enames.index(n) if n in enames else en[norm(n)]) for i, n in enumerate(dnames)
-           if n in enames or norm(n) in en}
+    alias = dict(s.split("=", 1) for s in args.bone_alias)  # DSR name -> ER/NR name
+    d2e = {}
+    for i, n in enumerate(dnames):
+        src = alias.get(n, n)
+        if src in enames:
+            d2e[i] = enames.index(src)
+        elif norm(src) in en:
+            d2e[i] = en[norm(src)]
+    if alias:
+        say("bone aliases: " + ", ".join(f"{k} <- {v}{'' if v in enames else ' (MISSING)'}" for k, v in alias.items()))
     e2d = {}
     for k, v in d2e.items():
         e2d.setdefault(v, k)

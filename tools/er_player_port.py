@@ -37,6 +37,10 @@ GAME_CHR = Path(r"F:\SteamLibrary\steamapps\common\DARK SOULS REMASTERED\chr")
 # ER jump attack clip -> DSR animation number used as the port template (swing / landing, R1 / R2, 1H / 2H)
 JUMP_CLIPS = {31030: 3700, 31070: 3701, 31230: 3710, 31270: 3711, 33030: 4700, 33070: 4701, 33230: 4710, 33270: 4711}
 HIDE_WEAPON = 710  # ER TAE HideEquippedWeapon
+# DSR skins the forearm to L/R_ForeTwist (child of the upper arm, at the elbow); ER calls its twist bone
+# L/R_ForeArmTwist. Without the alias the bone kept its rest pose: forearm straight in line with the upper arm,
+# the Estus flask far from the mouth (player test 2026-11-14).
+ALIASES = ["L_ForeTwist=L_ForeArmTwist", "R_ForeTwist=R_ForeArmTwist"]
 
 
 def bytes_of(f) -> bytes:
@@ -120,6 +124,8 @@ def main(argv=None) -> int:
                     extra += ["--scale-zero", f"{nid}:R_Weapon:{float(e.StartTime):.3f}:{t1:.3f}"]
                     print(f"  {cid} -> {new}: R_Weapon hidden {float(e.StartTime):.2f}-{min(t1, 99):.2f} s (ER TAE 710)")
     tag = f"_a{g}"
+    for a in ALIASES:
+        extra += ["--bone-alias", a]
     rc = nr_boss_port.main(["--nr", "c0000er", "--dsr", "c0000p", "--tag", tag] + extra)
     args.out.mkdir(parents=True, exist_ok=True)
     for cid, new in clips.items():

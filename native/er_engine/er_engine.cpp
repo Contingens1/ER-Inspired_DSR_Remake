@@ -288,6 +288,7 @@ static int AirAttackSubstitute(void* ctx, int anim, int layer, int a6);  // nize
 static void AirAttackTick(float dt);  // nizej: ladowanie w ataku z wyskoku
 static void AirAttackBuffer(BYTE* ctx);  // nizej: klik ataku przed otwarciem okna w skoku
 static void PickupTick();  // below: ends the upper-body pick-up copy ([Items] PickupWhileMoving)
+static BYTE* AnimLayerRecord(void* ctx, int layer);  // below (jump attack section): per-layer animation record
 static void AirAttackAfterPlayAnim(int anim, int layer);  // nizej: ladowanie po tym, jak gra konczy atak
 static bool g_airAtkMoveLock = false;   // recovery po ladowaniu ataku z wyskoku: osie ruchu = 0
 static float g_axis[2] = {};           // ostatnie osie ruchu (hook 0x1A3700/0x1A3750)
@@ -621,6 +622,7 @@ static bool g_hangRepairOn = true;   // [Fixes] HangRepair (see HangRepairTick)
 static bool g_hangRepairV2On = false;  // [Fixes] HangRepairV2 (test): silent move-flag drops, faster repair
 static bool g_itemHitCancelOn = true;  // [Items] HitCancelsItem (see ItemUpperOnPlayAnim)
 static bool g_pickupMoveOn = false;    // [Items] PickupWhileMoving (see PickupOnPlayAnim)
+static int g_drinkStageBlendMs = -1;   // [Items] DrinkStageBlend (see DrinkStageAfterPlayAnim), -1 = the game's
 
 // [Bosses] ArtoriasPhase2: 1 on, 0 off, 2 auto (default) = on only when this run loads the Artorias boss files:
 // the release layout (bin\er_engine.dll next to files\chr\c4100.anibnd.dcx, the boss files ship inside the main
@@ -660,7 +662,8 @@ static void LoadConfigIni() {
     g_freeStaminaOn = GetPrivateProfileIntA("Stamina", "FreeOutOfCombat", 1, iniPath) != 0;
     g_itemHitCancelOn = GetPrivateProfileIntA("Items", "HitCancelsItem", 1, iniPath) != 0;
     g_pickupMoveOn = GetPrivateProfileIntA("Items", "PickupWhileMoving", 0, iniPath) != 0;
-    Log("config: PickupWhileMoving=%d", g_pickupMoveOn ? 1 : 0);
+    g_drinkStageBlendMs = GetPrivateProfileIntA("Items", "DrinkStageBlend", -1, iniPath);
+    Log("config: PickupWhileMoving=%d DrinkStageBlend=%d ms", g_pickupMoveOn ? 1 : 0, g_drinkStageBlendMs);
     g_hangRepairOn = GetPrivateProfileIntA("Fixes", "HangRepair", 1, iniPath) != 0;
     g_hangRepairV2On = GetPrivateProfileIntA("Fixes", "HangRepairV2", 0, iniPath) != 0;
     g_attackFaceOn = GetPrivateProfileIntA("Roll", "AttackFaceTarget", 0, iniPath) != 0;
@@ -1674,6 +1677,23 @@ static bool PickupOnPlayAnim(void* ctx, void* out, int a3, int a4, char a5, int 
     return false;
 }
 
+// Estus stages on the upper body (layers 6/18): the patched ESD ends a stage with -1 and starts the next one in
+// the same frame (7585 -> 7586 -> 7587, 7585 -> 7588). The new stage then blends in from the layer below for the
+// TAE blend time, and with the drink clips that hide the weapon (R_Weapon scale 0, tools/er_player_port.py
+// --hide-weapon) the weapon of the walking pose shows through for that time (player test 2026-11-14: "miga w
+// polowie"). The ER clips are continuous between stages, so the blend of the following stages is shortened here
+// through the layer record (+0x28, see the jump attack section).
+static void DrinkStageAfterPlayAnim(void* ctx, int anim, int layer) {
+    if (g_drinkStageBlendMs < 0 || (layer != 6 && layer != 18) || (anim != 7586 && anim != 7587 && anim != 7588)) return;
+    if (ctx != g_playerAnimCtx) return;
+    if (BYTE* rec = AnimLayerRecord(ctx, layer)) __try {
+        float* blend = reinterpret_cast<float*>(rec + 0x28);
+        if (layer == 6)
+            Log("[%7lu ms] drink: stage %d blend %.3f -> %.3f s", GetTickCount() - g_t0, anim, *blend, g_drinkStageBlendMs / 1000.f);
+        *blend = g_drinkStageBlendMs / 1000.f;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {}
+}
+
 static void* __fastcall PlayAnimDetour(void* ctx, void* out, int a3, int a4, char a5, int a6, int a7) {
     {
         void* ret = nullptr;
@@ -1736,6 +1756,7 @@ static void* __fastcall PlayAnimDetour(void* ctx, void* out, int a3, int a4, cha
     AirControlOnPlayAnim(a3, a4);
     void* ret = g_origPlayAnim(ctx, out, a3, a4, a5, a6, a7);
     AirAttackAfterPlayAnim(a3, a4);
+    DrinkStageAfterPlayAnim(ctx, a3, a4);
     return ret;
 }
 
