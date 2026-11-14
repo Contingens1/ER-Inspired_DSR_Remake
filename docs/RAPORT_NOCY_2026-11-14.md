@@ -19,10 +19,10 @@ Wszystkie testy oprócz 4–6 startujesz z `dist\mods\bossy_nightreign\launch_nr
 4. **Centipede (§5):**
    - najpierw wariant A `launch_nr_centipede_night.bat`: czy plucie lub atak dystansowy nadal chowa model pod lawę, czy da się trafić przy mackach;
    - potem, jeśli trzeba, wariant B `launch_nr_centipede_night_b.bat`.
-5. **Capra → Omen Killer (§10):** `dist\mods\bossy_nightreign\launch_nr_capra_omen.bat`. Ocenić wygląd (ogon, lewa ręka), trafienia, tempo.
+5. **Capra → Omen Killer (§10):** `dist\mods\bossy_nightreign\launch_nr_capra_omen.bat`. Ocenić wygląd (ogon, lewa ręka), trafienia, tempo. Poprawka 14.11: 3001 to teraz cios oboma tasakami (ER 3007).
 6. **Stray Demon (§7):** `dist\mods\boss_stray_night\launch_stray_night.bat`. Ocenić ciosy 3002 i 3003 z Avatara: wygląd (skrzydła), trafienia, tempo.
-7. **Decyzje bez gry:**
-   - Gaping Dragon: czy rework AI na wzór NR (§6);
+7. **Gaping Dragon z AI na wzór NR (§12):** `dist\mods\bossy_nightreign\launch_nr_gaping_ai.bat`, walka w Depths.
+8. **Decyzje bez gry:**
    - postura: czy zaczynamy od Black Knighta (§9).
 
 ## 1. Zawieszenie postaci
@@ -188,7 +188,7 @@ Wszystkie testy oprócz 4–6 startujesz z `dist\mods\bossy_nightreign\launch_nr
 - **ER `c3070`:** 13 ataków 3000–3015 (2,3–5,6 s), wiele z kilkoma trafieniami (do 12 w 3004). Klipy są w `c3070_div00…05.anibnd`; do rozpakowania przed portem (tylko TAE i szkielet są w głównym pliku).
 - **Wniosek: wykonalne tą samą drogą co Artorias** (`tools\nr_boss_port.py` dopasowuje kości po nazwie; trzeba dodać ręczne pary dla skrętów).
   - Ryzyka:
-    - Capra walczy dwoma tasakami, a Omen Killer jednym;
+    - ~~Capra walczy dwoma tasakami, a Omen Killer jednym~~ (błąd: Omen Killer też ma dwa tasaki, poprawka w §10);
     - ciasna arena z psami;
     - pociski i zachowania ER trzeba odtworzyć w paramach DSR.
   - Paczki nie robiłem.
@@ -256,7 +256,7 @@ Hipoteza: JT41 albo typ 67 to „można wykonać ripostę”. Jeśli tak, wystar
   | Capra | Omen Killer ER | długość DSR → nowa | przesunięcie |
   |---|---|---|---|
   | 3000 cios z góry (prawa) | 3000 | 3,33 → 2,00 s | 2,7 → 3,3 m |
-  | 3001 cios z góry (lewa) | 3001 | 3,50 → 2,00 s | 2,4 → 3,3 m |
+  | 3001 cios z góry (lewa) | 3007: cios oboma tasakami naraz (poprawka 14.11, wcześniej 3001, czyli cios prawą ręką) | 3,50 → 2,17 s | 2,4 → 3,5 m |
   | 3002 cios z zamachem | 3003 | 5,00 → 2,50 s | 3,5 → 4,4 m |
   | 3003 zamach poziomy | 3006 | 4,50 → 2,23 s | 2,1 → 3,4 m |
   | 3004 cios z wypadem | 3002 | 4,00 → 2,33 s | 5,0 → 6,4 m |
@@ -267,7 +267,17 @@ Hipoteza: JT41 albo typ 67 to „można wykonać ripostę”. Jeśli tak, wystar
 - **Ryzyka:**
   1. Ataki są ok. 2 razy szybsze niż w DS1. To zamierzone tempo ER, ale walka będzie dużo trudniejsza.
   2. Ogon zostaje w pozie spoczynkowej (Omen Killer go nie ma), a przy pochyleniu tułowia koniec ciała schodzi 0,5–0,8 m poniżej pozy spoczynkowej. Ogon może wchodzić w podłogę.
-  3. Drugi tasak Capry idzie za lewą ręką Omen Killera, który walczy jedną bronią. Lewa ręka może wyglądać na pustą albo dziwną.
+  3. ~~Omen Killer walczy jedną bronią~~: to był błąd (założenie, nie dane). Omen Killer ma dwa tasaki; szkielet `c3070` ma kości `L_Weapon` i `R_Weapon`.
+     - Pomiar rąk (`tools\er_hand_activity.py c3070 …`):
+       - 3000, 3001 i 3002 to cios prawym tasakiem;
+       - 3003, 3006 i 3007 to cios oboma naraz;
+       - 3004 to seria, w której prowadzi prawy;
+       - 3005 prowadzi lewa ręka, ale klip nie ma trafień (prawdopodobnie chwyt);
+       - 3010 i 3011 są bez ruchu rąk i bez trafień;
+       - 3015 to pocisk przy 2,33 s (prawdopodobnie plucie ogniem).
+     - Capra 3001 (cios lewym tasakiem) dostał przez to zły klip; poprawione na 3007.
+     - Plucia ogniem (3015) i 3005, 3010, 3011 nie przenoszę.
+     - Zestawy `a001`–`a004` w `c3070` to warianty z innymi brońmi (AI 307010–307040: `lanthanum`, sierp, młot, `Mulberry`).
   4. Psy i arena bez zmian.
 - **Test (Ty):** `dist\mods\bossy_nightreign\launch_nr_capra_omen.bat`. Ocenić wygląd każdego ataku (ogon, lewa ręka), czy trafienia pasują do ciosów i tempo. Jeśli coś wygląda źle, podaj, jak wyglądał ruch, a dobiorę inny klip.
 
@@ -275,3 +285,42 @@ Hipoteza: JT41 albo typ 67 to „można wykonać ripostę”. Jeśli tak, wystar
 - `docs\black_knight_anim_map.md`: wszystkie 4 bronie (miecz, wielki miecz, topór, halabarda) z nazwami ataków, czasami, przesunięciem i combo z AI.
 - `docs\gwyn_anim_map.md`: 22 ataki, chwyt i dobicie, combo z AI.
 - Generator: `tools\dsr_anim_map.py` (TAE + nazwy z BehaviorParam + root motion), łańcuchy AI: `tools\ai_act_chains.py`.
+
+## 12. Gaping Dragon: AI na wzór Nightreign (14.11, decyzja gracza: tak)
+- **Paczka testowa:** `dist\mods\bossy_nightreign\launch_nr_gaping_ai.bat` (`files_c5260_ai`, DLL deweloperska).
+  - `chr\c5260.anibnd.dcx`: animacje NR 3000–3010 jak w `files_c5260`, teraz z oknami obrotu z NR (`nr_boss_port.py --nr c7700 --dsr c5260 --install --nr-turn --tag _ai --reuse`). Obrót w trakcie ataku mają 3001, 3002, 3007 i 3009.
+  - `script\m10_00_00_00.luabnd.dcx`: nowy skrypt 526000 z `tools\make_gaping_ai.py` (tekst: `work\boss_ai\526000_battle.nr_ai.lua`). Pozostałe skrypty mapy bez zmian.
+- **Ataki (z nazw BehaviorParam):**
+  - 3000 chwyt prawą ręką, 3010 chwyt lewą;
+  - 3001 kilka uderzeń lewą łapą;
+  - 3002 zamach lewą łapą;
+  - 3003 rzut brzuchem do przodu (5,8 m), zawsze przechodzi w szarżę 3004 (25 m);
+  - 3005 smagnięcie ogonem (3006 po odcięciu ogona);
+  - 3007 skok w miejscu i przygniecenie;
+  - 3008 wielkie plucie kwasem;
+  - 3009 skok do przodu z przygnieceniem (16,8 m).
+- **Co jest z NR:**
+  - wybór ataku według dystansu i strony, po której jesteś:
+    - chwyt ręką od Twojej strony;
+    - ogon i skoki, gdy jesteś za nim;
+    - z daleka szarża, zamach albo skok;
+  - czasy odnowienia ataków (po użyciu atak ma wagę 1 zamiast 50–100):
+    - chwyt 15 s, uderzenia łapą 20 s, zamach 10 s;
+    - szarża 35 s, ogon 20 s, skoki 20 s, plucie 40 s;
+  - poniżej 70% HP pierwsza akcja to zawsze plucie kwasem 3008, potem plucie ma dużą wagę z bliska i z boku;
+  - po udanym chwycie odchodzi na 10 m, zamiast stać;
+  - akcje bez ataku: podejście, odejście, obrót o 90°.
+- **Zmiany względem NR (DS1 nie ma potrzebnych funkcji):**
+  - odnowienia: timery AI 0–4 (DS1 używa tylko tych); chwyt i zamach liczone w akcjach (2 i 1 akcja zamiast 15 i 10 s);
+  - efekty NR 46599 (plucie zrobione), 46550 (ogon odcięty) i 46560 (szarża po 3003) zastąpione numerem AI, stanem części ciała i combo 3003 → 3004;
+  - dystans w DS1 liczy się między krawędziami ciał, więc strefy NR 5 i 10 m to tu 3 i 8 m; zasięgi ataków są z oryginalnego skryptu DS1 (chwyt do 0,5 m, łapa 1,5 m, zamach 4 m);
+  - skok 3009 leci zawsze 16,8 m (NR dopasowuje go do celu), więc bliżej niż 8 m zamiast niego jest skok w miejscu 3007;
+  - ataki do przodu (łapa, zamach, rzut brzuchem, plucie, skok): najpierw obrót do Ciebie (do 1,5 s), potem atak; chwyty, ogon i skok w miejscu od razu, jak w NR.
+- **Sprawdzone:** skrypt kompiluje się kompilatorem DSR i po dekompilacji z paczki ma tę samą treść.
+- **Niesprawdzone w grze.** Jeśli skrypt ma błąd wykonania, boss będzie stał bez ataków; wtedy zgłoś.
+- **Test (Ty):** `launch_nr_gaping_ai.bat`, walka w Depths. Ocenić:
+  - czy boss atakuje i się nie zacina;
+  - czy chwyty biorą rękę od Twojej strony;
+  - czy rzadziej powtarza te same ataki;
+  - czy przy 70% HP pluje kwasem;
+  - czy po szarży i skokach nie ląduje w dziwnych miejscach.
