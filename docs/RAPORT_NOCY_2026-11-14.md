@@ -19,10 +19,10 @@ Wszystkie testy oprócz 4–6 startujesz z `dist\mods\bossy_nightreign\launch_nr
 4. **Centipede (§5):**
    - najpierw wariant A `launch_nr_centipede_night.bat`: czy plucie lub atak dystansowy nadal chowa model pod lawę, czy da się trafić przy mackach;
    - potem, jeśli trzeba, wariant B `launch_nr_centipede_night_b.bat`.
-5. **Stray Demon (§7):** `dist\mods\boss_stray_night\launch_stray_night.bat`. Ocenić ciosy 3002 i 3003 z Avatara: wygląd (skrzydła), trafienia, tempo.
-6. **Decyzje bez gry:**
+5. **Capra → Omen Killer (§10):** `dist\mods\bossy_nightreign\launch_nr_capra_omen.bat`. Ocenić wygląd (ogon, lewa ręka), trafienia, tempo.
+6. **Stray Demon (§7):** `dist\mods\boss_stray_night\launch_stray_night.bat`. Ocenić ciosy 3002 i 3003 z Avatara: wygląd (skrzydła), trafienia, tempo.
+7. **Decyzje bez gry:**
    - Gaping Dragon: czy rework AI na wzór NR (§6);
-   - Capra → Omen Killer: czy robić port, i potwierdzenie, że Omen Killer to ten z tasakiem (§8);
    - postura: czy zaczynamy od Black Knighta (§9).
 
 ## 1. Zawieszenie postaci
@@ -239,3 +239,39 @@ Znaczenie numerów 8060/8700 do potwierdzenia podglądem animacji (`render_anim.
 - Animacje 2200 i 2202 mają zdarzenia ofiary (typ 96/109 z `15024–15026`, typ 193 i dźwięki `279003100`), czyli to ciosy krytyczne od strony ofiary.
 
 Hipoteza: JT41 albo typ 67 to „można wykonać ripostę”. Jeśli tak, wystarczy, że DLL zleci wrogowi 2100, a ripostę DS1 obsłuży sama. To trzeba sprawdzić jednym testem w grze: przełącznik w nocnej DLL, który po np. 3 trafieniach zleca 2100 najbliższemu Black Knightowi.
+
+## 10. Capra → Omen Killer: paczka testowa (14.11, rano, na prośbę gracza)
+- **Capra w danych** to „ナタデーモン”, czyli „demon z tasakiem”. Nazwy ataków z BehaviorParam:
+  - 3000 cios z góry z prawej;
+  - 3001 cios z góry z lewej;
+  - 3002 cios z góry z zamachem;
+  - 3003 zamach poziomy z lewej;
+  - 3004 cios z góry z wypadem (5 m);
+  - 3005 podwójne cięcie.
+
+  AI 224000 bez zmian.
+- **ER `c3070`, zestaw `a000`:** rozpakowany przez `tools\nr_inventory.py --src ..\nuxe\chr --only c3070 --unpack c3070` (nowe opcje `--src` i `--only`). Długości i przesunięcia: `tools\er_clip_summary.py`.
+- **Pary** (dobrane z liczb: kierunek ciosu, wypad, liczba trafień; animacji nie oglądałem):
+
+  | Capra | Omen Killer ER | długość DSR → nowa | przesunięcie |
+  |---|---|---|---|
+  | 3000 cios z góry (prawa) | 3000 | 3,33 → 2,00 s | 2,7 → 3,3 m |
+  | 3001 cios z góry (lewa) | 3001 | 3,50 → 2,00 s | 2,4 → 3,3 m |
+  | 3002 cios z zamachem | 3003 | 5,00 → 2,50 s | 3,5 → 4,4 m |
+  | 3003 zamach poziomy | 3006 | 4,50 → 2,23 s | 2,1 → 3,4 m |
+  | 3004 cios z wypadem | 3002 | 4,00 → 2,33 s | 5,0 → 6,4 m |
+  | 3005 podwójne cięcie | 3004: seria 3 ciosów, trzecie trafienie dodane (`--extra-hits`) | 5,33 → 4,00 s | 3,3 → 4,8 m (wypad ER skrócony ×0,6, bez tego 8 m) |
+
+  Okna obrotu z ER (`--nr-turn`): Capra celuje w trakcie ataku, blokady obrotu JT7 zdjęte.
+- **Sprawdzone narzędziem:** wszystkie ścieżki przypięte do istniejących kości (58 zmapowanych; poza mapą końcówki, bronie, skręty przedramion i ogon).
+- **Ryzyka:**
+  1. Ataki są ok. 2 razy szybsze niż w DS1. To zamierzone tempo ER, ale walka będzie dużo trudniejsza.
+  2. Ogon zostaje w pozie spoczynkowej (Omen Killer go nie ma), a przy pochyleniu tułowia koniec ciała schodzi 0,5–0,8 m poniżej pozy spoczynkowej. Ogon może wchodzić w podłogę.
+  3. Drugi tasak Capry idzie za lewą ręką Omen Killera, który walczy jedną bronią. Lewa ręka może wyglądać na pustą albo dziwną.
+  4. Psy i arena bez zmian.
+- **Test (Ty):** `dist\mods\bossy_nightreign\launch_nr_capra_omen.bat`. Ocenić wygląd każdego ataku (ogon, lewa ręka), czy trafienia pasują do ciosów i tempo. Jeśli coś wygląda źle, podaj, jak wyglądał ruch, a dobiorę inny klip.
+
+## 11. Mapy animacji
+- `docs\black_knight_anim_map.md`: wszystkie 4 bronie (miecz, wielki miecz, topór, halabarda) z nazwami ataków, czasami, przesunięciem i combo z AI.
+- `docs\gwyn_anim_map.md`: 22 ataki, chwyt i dobicie, combo z AI.
+- Generator: `tools\dsr_anim_map.py` (TAE + nazwy z BehaviorParam + root motion), łańcuchy AI: `tools\ai_act_chains.py`.

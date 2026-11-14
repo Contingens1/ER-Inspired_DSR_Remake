@@ -48,6 +48,8 @@ def entries(sf, cls, path: Path):
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--unpack", nargs="*", default=[])
+    ap.add_argument("--src", type=Path, default=NR_CHR, help="chr folder (default: Nightreign; ER: ..\nuxe\chr)")
+    ap.add_argument("--only", nargs="*", default=[], help="scan only these chr IDs (with --unpack: e.g. c3070)")
     args = ap.parse_args(argv)
     sf = load_soulsformats()
     lines: list[str] = []
@@ -72,7 +74,9 @@ def main(argv=None) -> int:
 
     emit()
     emit(f"{'chr':6} {'ok':3} {'hkx':>5} {'tae':>4} {'bones':>5}  DCX / best DSR match (shared bone names)")
-    ids = sorted({p.name[:5] for p in NR_CHR.glob("c*.anibnd.dcx")})
+    ids = sorted({p.name[:5] for p in args.src.glob("c*.anibnd.dcx")})
+    if args.only:
+        ids = [i for i in ids if i in args.only]
     for cid in ids:
         n_hkx = n_tae = 0
         skel: list[str] = []
@@ -82,7 +86,7 @@ def main(argv=None) -> int:
         out = ROOT / "work" / "boss_port" / f"nr_{cid}" / "anibnd"
         sources: dict[str, str] = {}  # hkx name -> compendium of the same binder (divided anibnds have one each)
         try:
-            for p in sorted(NR_CHR.glob(f"{cid}*.anibnd.dcx")):
+            for p in sorted(args.src.glob(f"{cid}*.anibnd.dcx")):
                 head = p.read_bytes()[:0x30]
                 dcx_type = head[0x28:0x2C].decode("ascii", "replace")
                 ents = entries(sf, sf.BND4, p)
