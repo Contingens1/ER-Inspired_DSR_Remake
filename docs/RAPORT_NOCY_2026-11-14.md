@@ -89,3 +89,41 @@ Gałąź `night-2026-11-14`. Bez commitów na `main` i bez wydań. Nocna DLL: `d
   3. Ocenić wygląd przerwania.
   - Inny czas: `python tools\apply_fast_pickup.py --start 0.4`.
 - **Odpowiednik w ER:** w `docs\er_anim_a000.md` nie ma czytelnej nazwy animacji podnoszenia (kandydaci `a000_0600xx` „Event…”), więc czasów z ER nie potwierdziłem. 0,5 s to wartość przyjęta na oko.
+
+## 5. Centipede Demon: przyczyna „modelu pod lawą” znaleziona, dwa warianty do testu
+- **Narzędzie:** `tools\boss_clip_compare.py` (tylko odczyt). Porównuje oryginalny klip DSR z przeniesionym klipem NR na tym samym szkielecie:
+  - najniższy punkt ciała,
+  - zakres wysokości korzenia,
+  - kości o największej różnicy,
+  - ścieżki przypięte do kości, których szkielet nie ma.
+- **Przyczyna (dowód):**
+  - W paczce `files_c5200` klip ataku **3003** to obcy plik: 4,67 s zamiast 6,53 s, 497 ścieżek, z czego **150 przypiętych do kości 347–496**, a szkielet Centipede ma 347 kości.
+  - Plik nadpisany 13.11 o 02:56 (`work\boss_port\nr_ported\c5200\a00_3003.hkx`, md5 `3c0627da…`; to samo md5 w zainstalowanej paczce).
+  - Gra czyta wtedy poza tablicą kości. W tym klipie najniższy punkt ciała to **−6,17 m** (DSR −1,14 m), a korzeń nie unosi się (DSR do +8,3 m).
+  - To pasuje do „model wykręca się i chowa pod lawę”.
+  - Poprawny port leżał w `a00_3003.hkx.bak` (6,53 s, tor korzenia jak w DSR, najniższy punkt −1,70 m).
+  - Obcy plik zachowany jako `a00_3003.hkx.foreign_497tracks`.
+- **„Nie da się go trafić przy mackach”:** w 3002, 3003 i 3009 kości ramion-paszcz (`L_hand*`, `R_hand*`, `*_Jaw`) odjeżdżają w NR o 15–29 m dalej niż w DSR.
+  - Hitboxy i strefy obrażeń DSR jadą razem z tymi kośćami, więc są w zupełnie innym miejscu niż w oryginale.
+  - Uwaga: na końcach długich łańcuchów różnice rosną z samego obrotu. U Gaping Dragona palce i skrzydła też dają 7–19 m, a tam gra działa poprawnie. To więc trop, nie dowód.
+- **Paczki testowe** (paczka `files_c5200` bez zmian):
+  - **A:** `launch_nr_centipede_night.bat` (`files_c5200_night`): wszystkie ataki NR, 3003 naprawiony.
+  - **B:** `launch_nr_centipede_night_b.bat` (`files_c5200_night_b`): ataki NR, ale 3002, 3003 i 3009 zostają z DSR.
+- **Test (Ty):**
+  1. Wariant A: czy plucie albo atak dystansowy nadal chowa model; czy da się trafić przy mackach.
+  2. Jeśli w A nie da się trafić: wariant B. Jeśli w B się da, winne są ramiona z klipów NR.
+
+## 6. Gaping Dragon: wnioski (bez paczki)
+- **AI NR 770000 i AI DSR 526000 używają tego samego zestawu ataków 3000–3010.**
+  - Ruchy NR 9100–9171 i 4100–4123 nie są wywoływane przez skrypt walki NR, więc nie ma czego przenosić jako „nowych ataków”.
+  - Klipy przeniesione wcześniej mają poprawne przypisania kości (sprawdzone narzędziem).
+- **Różnice NR względem DSR w AI** (`work\boss_ai\nr_770000\770000_battle.lua` i `work\boss_ai\dsr_m10_00\526000_battle.lua`, zdekompilowane dziś):
+  - Ataki NR to `ComboTunable_SuccessAngle180`: boss obraca się do celu w trakcie ataku. W DSR to głównie `NonspinningAttack` bez obrotu.
+  - Czasy odnowienia: 3000/3010 15 s, 3001 20 s, 3002 10 s, 3003 35 s, 3005/3006 20 s, 3007/3009 20 s, 3008 40 s.
+  - Strefy dystansu (do 5, 5–10, 10–20, 20–30 i ponad 30 m) i wybór ataku według strony, po której jest gracz.
+  - Szarża 3004 powtarzana (`ComboRepeat`) po efekcie 46560 nałożonym w 3003.
+  - Akcje podejścia, odejścia i obrotu (Act30–32).
+- **Propozycja reworku** (decyzja Twoja, do zaplanowania):
+  1. AI DSR przepisane na wzór NR: obrót w ataku, czasy odnowienia, strefy dystansu. Efekty 46550/46560 trzeba zastąpić licznikami albo wierszami SpEffect w paramach DSR.
+  2. Krótsze klipy NR 3003 i 3004 zostają.
+  3. Atak obszarowy wymuszający skok (np. fala przy lądowaniu 3007/3009), jak przy Artoriasie.
