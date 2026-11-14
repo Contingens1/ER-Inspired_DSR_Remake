@@ -32,13 +32,22 @@ def main(argv=None) -> int:
     hands = [i for i, n in enumerate(names) if n in ("R Hand", "L Hand", "R_weapon", "L_weapon")]
     pel = names.index("Pelvis") if "Pelvis" in names else 1
     for aid in args.anims:
-        P, dur = load_clip(d, DD / f"a00_{aid:04d}.hkx", par, ref)
+        path = DD / f"a00_{aid:04d}.hkx"
+        if not path.exists():
+            print(f"{aid}: no clip {path.name}")
+            continue
+        P, dur = load_clip(d, path, par, ref)
         F = len(P)
         fps = (F - 1) / dur if dur > 0 else 30.0
-        travel = P[-1, pel] - P[0, pel]
         rise = float(P[:, pel, 1].max() - P[0, pel, 1])
-        line = (f"{aid}: {dur:5.2f} s | pelvis travel fwd {-travel[2]:+5.2f} m side {travel[0]:+5.2f} m"
-                f" | highest pelvis rise {rise:+5.2f} m")
+        rm = ""
+        a = d.AnimationHKX.from_path(path)
+        if a.animation_container.hkx_animation.extractedMotion:  # root motion (moves the character in the world)
+            s = a.animation_container.get_reference_frame_samples()
+            end, yaw = s[-1], float(s[-1][3]) if len(s[-1]) > 3 else 0.0
+            peak = max(float((x[0] ** 2 + x[2] ** 2) ** 0.5) for x in s)
+            rm = f" | root motion fwd {-end[2]:+5.2f} side {end[0]:+5.2f} up {end[1]:+5.2f} m (max dist {peak:4.1f} m, yaw {np.degrees(yaw):+4.0f} deg)"
+        line = f"{aid}: {dur:5.2f} s{rm} | pelvis rise {rise:+5.2f} m"
         if hands:
             v = np.linalg.norm(np.diff(P[:, hands], axis=0), axis=2) * fps  # [F-1, H]
             f, h = np.unravel_index(int(v.argmax()), v.shape)
