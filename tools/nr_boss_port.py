@@ -103,6 +103,10 @@ def port_one(ctx, nr_id: int, dsr_id: int, out: Path) -> dict:
                 a = epar[a]
             if a < 0:
                 P[:, b] = dPr[0, b] + S * (eP[:, x] - ePr[0, x])
+            elif Rm[e2d[a]] is None:
+                # the ER anchor maps to a DSR bone that comes later (player: ER hangs L_Shield on L_Weapon, DSR on
+                # L_Hand): keep the DSR rest offset from the DSR parent, rotation from ER
+                P[:, b] = P[:, p] + Rm[p].apply(np.repeat(dref[0][b][None], F, axis=0))
             else:
                 lp = e2d[a]
                 off = dRr[lp].inv().apply(dPr[0, b] - dPr[0, lp])[0]

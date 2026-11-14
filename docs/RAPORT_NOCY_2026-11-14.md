@@ -22,7 +22,14 @@ Wszystkie testy oprócz 4–6 startujesz z `dist\mods\bossy_nightreign\launch_nr
 5. **Capra → Omen Killer (§10):** `dist\mods\bossy_nightreign\launch_nr_capra_omen.bat`. Ocenić wygląd (ogon, lewa ręka), trafienia, tempo. Poprawka 14.11: 3001 to teraz cios oboma tasakami (ER 3007).
 6. **Stray Demon (§7):** `dist\mods\boss_stray_night\launch_stray_night.bat`. Ocenić ciosy 3002 i 3003 z Avatara: wygląd (skrzydła), trafienia, tempo.
 7. **Gaping Dragon z AI na wzór NR (§12):** `dist\mods\bossy_nightreign\launch_nr_gaping_ai.bat`, walka w Depths.
-8. **Decyzje bez gry:**
+8. **Ataki z wyskoku (§13):** `launch_nr_artorias_test.bat`.
+   - skok w miejscu i ze sprintu + R1 i R2, najlepiej katana, pięści i młot. Czy lądowanie jest płynne (bez szarpnięcia i przeskoku pozy), czy katana wygląda dobrze, czy pięści i R2 młota mają atak z ER;
+   - porównanie: `[Jump] LandStartTime=0` w `c0000_er_engine_night\bin\er_engine.ini` przywraca stare lądowanie.
+9. **Sprint przy namierzeniu (§13):** ten sam launcher.
+   - namierzyć wroga, trzymać klawisz uniku z gałką w bok, potem w tył (ponad 0,5 s). Postać powinna biec sprintem tam, gdzie gałka, z kamerą na wrogu;
+   - potem F8 (w logu `lock-on sprint probe` i `free movement forced`);
+   - krótkie wciśnięcie dalej ma dawać przewrót.
+10. **Decyzje bez gry:**
    - postura: czy zaczynamy od Black Knighta (§9).
 
 ## 1. Zawieszenie postaci
@@ -324,3 +331,43 @@ Hipoteza: JT41 albo typ 67 to „można wykonać ripostę”. Jeśli tak, wystar
   - czy rzadziej powtarza te same ataki;
   - czy przy 70% HP pluje kwasem;
   - czy po szarży i skokach nie ląduje w dziwnych miejscach.
+
+## 13. Ataki z wyskoku i sprint przy namierzeniu (14.11, dzień, zgłoszenie z planu §3)
+Wszystko w paczce nocnej: DLL `c0000_er_engine_night\bin`, animacje `bossy_nightreign\files_c0000_night\chr` (`c0000.anibnd.dcx` z szybkim podnoszeniem + `c0000_a2x/a3x/a4x.anibnd.dcx`). Główny mod bez zmian.
+
+**Przyczyny z danych:**
+- **Pięści (grupa 42):** ciosy pięścią zadają obrażenia zdarzeniem `InvokePCBehavior` (typ 307), a generator szukał tylko `InvokeAttackBehavior` (typ 1) i pominął grupę. Pliki z repozytorium są dobre.
+- **R2 młota (grupa 33):** DSR 3300 i 4300 to tylko odnośniki do animacji 3600 i 4600, które mają trafienie. Generator teraz bierze zdarzenia stamtąd.
+- **Katana (grupa 29):** pliki repozytorium są przypięte do 42 kości szkieletu ER (model się rozpada). Dotąd katana dostawała zastępczo klipy miecza zakrzywionego.
+- **Topór (grupa 30), R1:** w samym ER topór nie ma własnego R1 z wyskoku. Jego TAE odtwarza klipy młota `a033_031030` i `033030`. Klip „zastępczy” to więc dokładnie to, co robi ER; nic nie zmieniam.
+- **Szarpnięcie przy lądowaniu:** DLL zaczynała lądowanie od początku i przyspieszała animację w jednej klatce do czasu zamachu (do 90×), stąd przeskok pozy i przesunięcie.
+- **Sprint przy namierzeniu:** kod wejścia gry (`FUN_140398920`) włącza sprint (`+0x1E4`) po 0,4 s trzymania w każdym kierunku. DLL od v0.3.0 odkłada przewrót w bok do puszczenia. Blokada jest dalej, w ruchu przy namierzeniu (tryb kroku bokiem, `p3+0x21D` = 0).
+
+**Zrobione:**
+- `tools\add_jump_attacks.py`:
+  - typ 307 jako trafienie;
+  - odnośniki 3300 → 3600 i 4300 → 4600;
+  - własne klipy z `work\jump_port\` mają pierwszeństwo;
+  - `--chr DIR` (zapis do paczki testowej).
+
+  Tabela `jump_attack_table.h`: +R2 młota (333710, 334710), +pięści R1 i R2 (423700, 423710; oburącz DSR nie ma ataków pięścią), katana z nowymi czasami. Pozostałe wiersze bez zmian.
+- `tools\er_player_port.py` (nowe): klipy gracza z ER na szkielet gracza DSR tą samą drogą co bossy (`nr_boss_port.py`, kości po nazwach, 48 z 61). Katana: 8 klipów (R1 i R2, jedną ręką i oburącz, zamach i lądowanie).
+  - Podgląd renderem: postać spójna, miecz idzie znad głowy w dół i do przodu, nogi podkulone.
+  - `nr_boss_port.py`: wyjście awaryjne dla kości, których przodek w ER leży w DSR dalej w kolejności (`L_Shield` i `R_Shield`). Bossów to nie dotyczy.
+- **Czas animacji (Ghidra tylko do odczytu + test w grze):** PlayAnim (`0x37A040`) → `FUN_140439c90` wypełnia rekord warstwy `*(ctx+0x20) + warstwa × 0xA8`:
+  - `+0x00` animacja;
+  - `+0x28` czas przejścia;
+  - `+0x5C` **czas startu**;
+  - `+0xA4` **bieżący czas animacji** (rośnie o 1/60 s na klatkę).
+
+  `[Jump] LandStartTime=1`: lądowanie dostaje czas zamachu w `+0x5C` warstw 7 i 23, bez przyspieszania.
+  - Test (14.11, ok. 09:10, sam, Darkroot, wielki młot oburącz, 3 skoki w miejscu z R1): lądowanie startowało od 0,30 i 0,45 s (`+0xA4` 0,433 → 0,470 → 0,486…).
+  - Żadnego jednoklatkowego przeskoku pozycji. Postać przesuwa się płynnie o ok. 0,4 m w ciągu 0,15 s, bo tak porusza się klip lądowania z ER.
+  - Wyglądu nie oceniałem.
+- **Sprint przy namierzeniu, `[Roll] LockOnSprintFree=1`** (eksperyment): gdy klawisz jest trzymany ponad próg sprintu z namierzonym wrogiem i wychyloną gałką, DLL ustawia przed kodem wejścia gry `+0x21D` = 1 (swobodny ruch) i przywraca poprzednią wartość po puszczeniu.
+  - Wersja diagnostyczna loguje co 250 ms: `lock-on sprint probe` (flaga sprintu, `+0x21D` gry, osie, prędkość, kierunek).
+  - Log pokaże, czy gra nadpisuje `+0x21D` co klatkę i czy prędkość dochodzi do sprintu.
+  - **Niesprawdzone:** przy ognisku nie było wroga do namierzenia.
+- Kompilacja release (`/DER_DIAG=0`): OK.
+
+**Uwaga do scalenia z main:** `jump_attack_table.h` ma teraz wiersze pięści, R2 młota i nowe czasy katany. DLL zbudowana z tej gałęzi wymaga animacji z `files_c0000_night`. Przy scalaniu trzeba puścić `add_jump_attacks.py` (wszystkie grupy) na `dist\mods\c0000_er_engine\files\chr`.

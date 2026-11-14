@@ -441,6 +441,78 @@ static void LockOnSprintPostInput(BYTE* ctx, float dt, void* p3) {
         stamina, roll ? "roll" : "no roll");
 }
 
+// --- Sprint in any direction while locked on (experiment, [Roll] LockOnSprintFree, default 0) ------
+// Known issue (plan §3): with a lock-on target the sprint only runs forward. The input handler raises the
+// sprint (+0x1E4) after the 0.4 s hold in every direction (FUN_140398920 reads only the hold timer +0x260),
+// so the limit sits in the movement code, which keeps the lock-on strafe while p3+0x21D == 0. The handler
+// itself switches the stick into the free-movement frame when +0x21D != 0 (same function, top). Here, while
+// the sprint key is held past the threshold with a lock-on target and a direction, +0x21D is forced to 1
+// before the handler runs (camera stays on the target, the character runs where the stick points, as in ER)
+// and put back when the sprint ends. The diag build logs both values every 250 ms ("lock-on sprint probe")
+// to show whether the game rewrites +0x21D each frame and whether the run speed reaches sprint speed.
+static bool g_lockSprintFreeOn = false;  // er_engine.ini [Roll] LockOnSprintFree
+static bool g_landStartTimeOn = false;   // er_engine.ini [Jump] LandStartTime (jump attack section)
+static bool g_lockFreeForced = false;
+static BYTE g_lockFreeSaved = 0;
+
+static BYTE* LockTargetChr(void* p3) {
+    if (!p3) return nullptr;
+    __try {
+        auto chr = *reinterpret_cast<BYTE* const*>(static_cast<const BYTE*>(p3) + 0x10);
+        if (reinterpret_cast<ULONG_PTR>(chr) < 0x10000) return nullptr;
+        return chr[0x1A0] != 0 ? chr : nullptr;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+}
+
+static void LockOnSprintFreePre(BYTE* ctx, void* p3) {
+    if (!ctx || !p3 || g_rollKey <= 0) return;
+    BYTE* b = static_cast<BYTE*>(p3);
+    DWORD now = GetTickCount();
+    bool locked = LockTargetChr(p3) != nullptr;
+    bool held = g_keyDown[g_rollKey] != 0;
+    DWORD heldMs = held ? now - g_keyDownAt[g_rollKey] : 0;
+    float mag = sqrtf(g_axis[0] * g_axis[0] + g_axis[1] * g_axis[1]);
+    BYTE before = 0, sprint = 0;
+    __try { before = b[0x21D]; sprint = ctx[0x1E4]; } __except (EXCEPTION_EXECUTE_HANDLER) { return; }
+    bool want = g_lockSprintFreeOn && locked && held && heldMs >= SprintHoldThresholdMs() && mag >= 0.3f &&
+                ctx[0x350] == 0;
+    __try {
+        if (want) {
+            if (!g_lockFreeForced) {
+                g_lockFreeSaved = before;
+                Log("[%7lu ms] lock-on sprint: free movement forced (+0x21D %u -> 1, sprint flag %u, axes %.2f %.2f)",
+                    now - g_t0, before, sprint, g_axis[0], g_axis[1]);
+            }
+            g_lockFreeForced = true;
+            b[0x21D] = 1;
+        } else if (g_lockFreeForced) {
+            g_lockFreeForced = false;
+            if (locked) b[0x21D] = g_lockFreeSaved;
+            Log("[%7lu ms] lock-on sprint: free movement released (+0x21D now %u, locked %d)", now - g_t0, b[0x21D],
+                locked ? 1 : 0);
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {}
+    if (!kDiag || !locked || !held) return;
+    static DWORD lastLog = 0, lastAt = 0;
+    static float lastX = 0, lastZ = 0;
+    float x = 0, z = 0, yaw = 0, speed = -1;
+    if (BYTE* pos = ChrPosData()) __try {
+        x = *reinterpret_cast<float*>(pos + 0x10);
+        z = *reinterpret_cast<float*>(pos + 0x18);
+        yaw = *reinterpret_cast<float*>(pos + 0x04);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {}
+    if (now - lastLog < 250) return;
+    if (lastAt && now > lastAt) speed = sqrtf((x - lastX) * (x - lastX) + (z - lastZ) * (z - lastZ)) * 1000.f / (now - lastAt);
+    Log("[%7lu ms] lock-on sprint probe: held %lu ms, sprint flag +0x1E4 %u, free-move +0x21D %u (game) %s, axes %.2f %.2f, "
+        "speed %.2f m/s, yaw %.0f deg", now - g_t0, heldMs, sprint, before, g_lockFreeForced ? "-> 1 forced" : "", g_axis[0],
+        g_axis[1], speed, yaw * 57.29578f);
+    lastLog = lastAt = now;
+    lastX = x;
+    lastZ = z;
+}
+
 // Converts 4-way lock-on roll requests (+0x94 back, +0x95 left, +0x96 right, and queued +0x224)
 // into forward roll (+0x93) and arms the exact 360-degree camera-relative world yaw from ctx+0x10/0x18.
 static void OmniRollPostInput(BYTE* ctx, float dt, void* p3) {
@@ -586,7 +658,10 @@ static void LoadConfigIni() {
     g_hangRepairOn = GetPrivateProfileIntA("Fixes", "HangRepair", 1, iniPath) != 0;
     g_hangRepairV2On = GetPrivateProfileIntA("Fixes", "HangRepairV2", 0, iniPath) != 0;
     g_attackFaceOn = GetPrivateProfileIntA("Roll", "AttackFaceTarget", 0, iniPath) != 0;
-    Log("config: AttackFaceTarget=%d", g_attackFaceOn ? 1 : 0);
+    g_lockSprintFreeOn = GetPrivateProfileIntA("Roll", "LockOnSprintFree", 0, iniPath) != 0;
+    g_landStartTimeOn = GetPrivateProfileIntA("Jump", "LandStartTime", 0, iniPath) != 0;
+    Log("config: LandStartTime=%d", g_landStartTimeOn ? 1 : 0);
+    Log("config: AttackFaceTarget=%d LockOnSprintFree=%d", g_attackFaceOn ? 1 : 0, g_lockSprintFreeOn ? 1 : 0);
     Log("config: HangRepair=%d HangRepairV2=%d", g_hangRepairOn ? 1 : 0, g_hangRepairV2On ? 1 : 0);
     char artWhy[MAX_PATH + 64];
     g_artOn = ResolveArtoriasPhase2(GetPrivateProfileIntA("Bosses", "ArtoriasPhase2", 2, iniPath), artWhy, sizeof(artWhy));
@@ -1189,6 +1264,7 @@ static void __fastcall InputDetour(void* ctx, float dt, void* p3) {
         if (mag < 0.5f) g_rollAxisSince = 0; else if (!g_rollAxisSince) g_rollAxisSince = now ? now : 1;
     }
     g_fakeRollPress = RollBufferPre(static_cast<BYTE*>(ctx), p3);
+    LockOnSprintFreePre(static_cast<BYTE*>(ctx), p3);
     g_origInput(ctx, dt, p3);
     g_fakeRollPress = false;
     SuppressSprintWhileDrinking(static_cast<BYTE*>(ctx));
@@ -1788,6 +1864,59 @@ static void AirAttackBeginLand(DWORD t, bool playNow) {
     if (playNow) AirAttackReplayNow();  // the game answers with -1 on 7/23, then the landing restarts once
 }
 
+// --- Landing start time (experiment, [Jump] LandStartTime, default 0) ------------------------------
+// PlayAnim 0x37A040 -> FUN_140439c90(ctx+0x20 object, ..., layer, ...) fills one 0xA8-byte record per layer
+// (record = *(ctx+0x20) + layer * 0xA8) through FUN_14043b470: +0x00 anim, +0x24 a5, +0x28 blend (a6, -1 =
+// the animation's default), +0x38..+0x44 a7, +0x5C a value from the animation table (+0x1C of its entry)
+// times a per-character factor - the candidate for a start offset. With the switch on, the landing writes
+// the swing time into +0x5C of layers 7 and 23 right after its PlayAnim instead of the one-frame speed spike.
+// The diag build logs every float of the layer-7 record that changes during the first frames of the swing
+// and of the landing ("anim record"), to find where the game keeps the running animation time.
+static int g_recProbeFrames = 0;
+static float g_recPrev[0xA8 / 4] = {};
+static bool g_recPrevOk = false;
+
+static BYTE* AnimLayerRecord(void* ctx, int layer) {
+    if (!ctx || layer < 0 || layer >= 0x1F) return nullptr;
+    __try {
+        BYTE* obj = *reinterpret_cast<BYTE**>(static_cast<BYTE*>(ctx) + 0x20);
+        if (reinterpret_cast<ULONG_PTR>(obj) < 0x10000) return nullptr;
+        return obj + layer * 0xA8;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+}
+
+static void AnimRecordProbeStart(const char* why) {
+    if (!kDiag) return;
+    g_recProbeFrames = 8;
+    g_recPrevOk = false;
+    Log("[%7lu ms] anim record probe: %s", GetTickCount() - g_t0, why);
+}
+
+static void AnimRecordProbeTick() {
+    if (!kDiag || g_recProbeFrames <= 0) return;
+    --g_recProbeFrames;
+    BYTE* rec = AnimLayerRecord(g_airAtkCtx, 7);
+    if (!rec) return;
+    float cur[0xA8 / 4];
+    __try { memcpy(cur, rec, sizeof(cur)); } __except (EXCEPTION_EXECUTE_HANDLER) { return; }
+    char line[240];
+    int n = 0;
+    if (!g_recPrevOk) {
+        n = sprintf_s(line, "anim id %d |", *reinterpret_cast<int*>(&cur[0]));
+        for (int i = 1; i < 0xA8 / 4 && n < 200; ++i)
+            if (cur[i] != -1.f && cur[i] != 0.f && fabsf(cur[i]) < 100.f) n += sprintf_s(line + n, sizeof(line) - n, " +%02X=%.3f", i * 4, cur[i]);
+    } else {
+        n = sprintf_s(line, "changed:");
+        for (int i = 0; i < 0xA8 / 4 && n < 200; ++i)
+            if (memcmp(&cur[i], &g_recPrev[i], 4) != 0) n += sprintf_s(line + n, sizeof(line) - n, " +%02X %.3f->%.3f", i * 4, g_recPrev[i], cur[i]);
+    }
+    Log("[%7lu ms] anim record L7 %s", GetTickCount() - g_t0, line);
+    memcpy(g_recPrev, cur, sizeof(cur));
+    g_recPrevOk = true;
+}
+
 static void AirAttackReplayNow(bool fromGame) {  // gra skasowala nasze ladowanie swoim -1 - zlecamy je jeszcze raz
     DWORD now = GetTickCount();
     g_airAtkReplay = false;
@@ -1796,6 +1925,17 @@ static void AirAttackReplayNow(bool fromGame) {  // gra skasowala nasze ladowani
     AirAttackPlay(g_airAtkLandAnim);
     if (kLandSync) g_airAtkLandT0 += (now - g_airAtkLandAt) / 1000.f;
     g_airAtkLandAt = now;
+    AnimRecordProbeStart("landing started");
+    if (g_landStartTimeOn && g_airAtkLandT0 > 0.01f) {
+        for (int layer : {7, 23})
+            if (BYTE* rec = AnimLayerRecord(g_airAtkCtx, layer)) __try {
+                *reinterpret_cast<float*>(rec + 0x5C) = g_airAtkLandT0;
+            } __except (EXCEPTION_EXECUTE_HANDLER) {}
+        g_airAtkFfLeft = 0.f;
+        Log("[%7lu ms] jump attack: landing %d started with +0x5C = %.2f s (no speed spike)", now - g_t0, g_airAtkLandAnim,
+            g_airAtkLandT0);
+        return;
+    }
     // Arm the time jump right here. Frame order seen in the logs: input tick -> game state machine (its
     // -1 and this restart) -> animation update -> physics, so the next animation update is the first one
     // of the landing animation; the following tick restores the speed.
@@ -1820,6 +1960,7 @@ static void AirAttackAfterPlayAnim(int anim, int layer) {
 
 static void AirAttackTick(float dt) {
     if (dt > 0.001f && dt < 0.1f) g_airAtkDt = dt;
+    AnimRecordProbeTick();
     if (g_airAtkState == kAtkNone || !g_origPlayAnim || !g_airAtkRow) return;
     DWORD now = GetTickCount();
     if (g_airAtkState == kAtkLand) {
@@ -1949,6 +2090,7 @@ static int AirAttackSubstitute(void* ctx, int anim, int layer, int a6) {
     g_airAtkAt = g_airSubAt;
     g_airAtkSeenAir = false;
     g_airAtkState = kAtkAir;
+    AnimRecordProbeStart("swing started");
     // Wektor lotu z ostatniej klatki skoku; pion najwyzej taki, zeby dolecial do szczytu zwyklego skoku.
     g_airAtkVOk = false;
     float h = 0.f;

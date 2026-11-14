@@ -16,6 +16,9 @@ HKX: plik ER jako aGG_NNNN.hkx (ID wpisu = ID animacji GG*10000+NNNN) w c0000_aN
 Podmiana ataku w locie na te animacje, wykrycie ladowania i tabela jump_attack_table.h: er_engine.dll.
 
 Uzycie (CMD): python tools\\add_jump_attacks.py --groups a26
+Every run rewrites jump_attack_table.h from the groups given, so always pass all groups:
+  python tools\\add_jump_attacks.py --groups a20 a23 a25 a26 a27 a28 a29 a30 a32 a33 a35 a36 a38 a42 a43
+  --chr DIR writes the anibnd files to DIR (test package) instead of the main mod's files\\chr.
 """
 from __future__ import annotations
 
@@ -61,17 +64,24 @@ def jt_start(events, j):
     return min(s) if s else None
 
 
+def _types(atk):
+    return atk if isinstance(atk, (set, frozenset)) else {atk}
+
+
 def hit_end(events, atk):
-    s = [e.EndTime for e in events if int(e.Type) == atk]
+    s = [e.EndTime for e in events if int(e.Type) in _types(atk)]
     return max(s) if s else None
 
 
 def first_hit(events, atk):
-    s = [e.StartTime for e in events if int(e.Type) == atk]
+    s = [e.StartTime for e in events if int(e.Type) in _types(atk)]
     return min(s) if s else None
 
 
 def er_hkx(gg: str, er_id: int) -> Path | None:
+    own = ROOT / "work" / "jump_port" / f"a0{gg}_{er_id:06d}.hkx"  # tools/er_player_port.py (e.g. katana a29)
+    if own.exists():
+        return own
     hits = glob.glob(str(REPO / "**" / "2016 (DSR)" / "**" / f"a0{gg}_{er_id:06d}.hkx"), recursive=True)
     if not hits:
         return None
@@ -83,16 +93,23 @@ def er_hkx(gg: str, er_id: int) -> Path | None:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--groups", nargs="+", default=["a26"])
+    ap.add_argument("--chr", type=Path, default=CHR,
+                    help="folder written to (e.g. a test package); files missing there are read from the main mod, "
+                         "then from the game")
     args = ap.parse_args()
+    out_dir = args.chr.resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
     load_soulsformats()
     from SoulsFormats import BND3, BND4, TAE, BinderFile
     from System import Array, Byte
     t1, te = template(DSAS / "TAE.Template.DS1.xml"), template(DSAS / "TAE.Template.ER.xml")
-    a1, ae = type_id(t1, "InvokeAttackBehavior"), type_id(te, "InvokeAttackBehavior")
+    # DSR damage events: InvokeAttackBehavior; fists (a42) hit through InvokePCBehavior (2026-11-14)
+    a1 = {type_id(t1, "InvokeAttackBehavior"), type_id(t1, "InvokePCBehavior")}
+    ae = type_id(te, "InvokeAttackBehavior")
     er_taes = {ntpath.basename(f.Name).lower(): f for f in read_binder(BND4, str(ER_ANI)).Files}
 
-    ani_path = CHR / "c0000.anibnd.dcx"
-    ani = read_binder(BND3, str(ani_path))
+    ani_path = out_dir / "c0000.anibnd.dcx"
+    ani = read_binder(BND3, str(ani_path if ani_path.exists() else CHR / "c0000.anibnd.dcx"))
     added = {}  # kontener -> [(new_full_id, hkx_path)]
     rows = []   # wiersze JumpAttackRow -> native/er_engine/jump_attack_table.h
     er_tae_cache = {}
@@ -106,6 +123,13 @@ def main() -> int:
         for src_id, new_id, er_id in PAIRS:
             src = anims.get(src_id)
             d_hit = first_hit(list(src.Events), a1) if src is not None else None
+            if d_hit is None and src is not None and src.AnimFileReference and int(src.Unknown1) // 10000 == int(gg):
+                # e.g. hammer a33 3300 / 4300: only a reference to 3600 / 4600, which holds the swing and its hit
+                ref = anims.get(int(src.Unknown1) % 10000)
+                r_hit = first_hit(list(ref.Events), a1) if ref is not None else None
+                if r_hit is not None:
+                    print(f"  {g}: {src_id} is a reference to {int(src.Unknown1) % 10000} - events taken from there")
+                    src, d_hit = ref, r_hit
             if d_hit is None:
                 print(f"  {g}: {src_id}->{new_id}: atak DSR {'bez trafienia' if src is not None else 'nie istnieje'} - pomijam")
                 continue
@@ -199,7 +223,7 @@ def main() -> int:
     tmp.replace(ani_path)
 
     for container, items in added.items():
-        src_path = CHR / container if (CHR / container).exists() else GAME_CHR / container
+        src_path = next(p for p in (out_dir / container, CHR / container, GAME_CHR / container) if p.exists())
         b = read_binder(BND3, str(src_path))
         ref = b.Files[0]
         for full_id, hkx, name in items:
@@ -211,7 +235,7 @@ def main() -> int:
         b.Files.Clear()
         for f in files:
             b.Files.Add(f)
-        out = CHR / container
+        out = out_dir / container
         tmp = out.with_suffix(".tmp")
         b.Write(str(tmp))
         b.Dispose()
