@@ -8,7 +8,7 @@
 # logic on when files\chr\c4100.anibnd.dcx is present ([Bosses] ArtoriasPhase2=2).
 # Usage: powershell -ExecutionPolicy Bypass -File native\er_engine\build_release.ps1 [-Version 0.4.0] [-SkipInstallerTest]
 param(
-    [string]$Version = '0.5.0',
+    [string]$Version = '0.5.1',
     [string]$Repo = 'Contingens1/ER-Inspired_DSR_Remake',   # GitHub repo whose latest release setup\Update.ps1 checks
     [switch]$SkipInstallerTest
 )

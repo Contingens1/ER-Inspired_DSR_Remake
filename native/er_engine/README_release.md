@@ -44,6 +44,18 @@ Aktualizacja zmienia wyłącznie pliki w folderze moda — nie dotyka gry ani Mo
 - **Graj wyłącznie offline.** Mod zmienia działanie gry w pamięci — gra online grozi banem. Mod nie ma własnej blokady sieci; przed uruchomieniem przełącz Steama w tryb offline albo ustaw w grze start w trybie offline.
 - Na innej wersji `DarkSoulsRemastered.exe` hooki się nie założą i mechaniki z DLL nie będą działać (log: `bin\er_engine.log`).
 
+## Nowe w 0.5.1
+
+Wersja testowa (pre-release): poprawki sprawdzone w grze, ale mogą pojawić się błędy. Z przerobionych bossów paczka zawiera nadal tylko Artoriasa.
+
+- **Estus chowa broń** na czas picia, jak w Elden Ringu, w miejscu i w marszu. Ręka z flaszką trafia do ust, bez mignięcia broni między łykami.
+- **Podnoszenie przedmiotów w marszu** (jak w ER): postać nie zatrzymuje się, przedmiot trafia do ekwipunku. Wyłączenie: `PickupWhileMoving=0` w `bin\er_engine.ini`.
+- **Ataki z wyskoku:**
+  - katana z własnymi atakami z wyskoku z ER (wcześniej zastępcze) i z poprawnym układem rąk; R2 katany w powietrzu działa;
+  - pięści i R2 młota z atakami z ER;
+  - lądowanie bez ślizgu i bez skoku pozy, koniec lądowania bez przeskakiwania nóg (sekcja `[Jump]` w `bin\er_engine.ini`).
+- **Znane problemy:** przy lądowaniu R1 postać jest jeszcze wyraźnie ściągana w dół (przy R2 słabiej); młot przy R2 potrafi się odbić od ziemi, zwłaszcza po skoku na wyższe podłoże.
+
 ## Nowe w 0.5.0
 
 - **Artorias — dopracowane efekty drugiej fazy** (sprawdzone w grze):
