@@ -469,3 +469,17 @@ Wszystko w paczce nocnej: DLL `c0000_er_engine_night\bin`, animacje `bossy_night
   - Ręce w obu klipach pasują do siebie w tym samym czasie, więc dłuższe przejście wygładza głównie nogi. Symulacja przejścia (150 i 300 ms) nie schodzi stopami pod ziemię (najniżej −1 cm).
   - Test: `[Jump] LandBlend=300` w ini nocnej (było 150).
 - DLL nocna przebudowana (gra zamknięta), kompilacja release (`ER_DIAG=0`) OK. Tabela ataków z wyskoku bez zmian.
+
+## 19. Wyniki testu gracza 14.11 (po §18)
+- **Estus (`launch_nr_estus_test.bat`): działa.** Picie w miejscu i w marszu: ręka zgięta, butelka w miarę dokładnie przy ustach, bez T-pose, broń schowana. Poprawka pozy spoczynkowej (`--align-rest`) potwierdzona.
+- **Ataki z wyskoku:**
+  - lewa ręka katany naprawiona (jak w ER);
+  - poprzednie poprawki prędkości (bez ślizgu) nadal działają;
+  - **nadal pionowe dociąganie przy lądowaniu R1**, przy R2 mniejsze (`LandBlend=300` nie usunęło go);
+  - **nowe: młot przy R2 „odbija się” od ziemi**, zwłaszcza przy skoku na nieco wyższe podłoże. Do zbadania, czy da się to łatwo zmniejszyć.
+- **Podnoszenie w marszu (7520 → 7525–7527 na górnej połowie ciała): działa.** Postać idzie dalej, przedmiot trafia do ekwipunku (komunikat się wyświetla).
+- **Przejście przez ścianę mgły: normalne**, jak w oryginale.
+- **Sprint przy namierzeniu (`LockOnSprintFree`): częściowo.** Postać jest odblokowana (model może patrzeć w inną stronę niż cel), ale nie sprintuje, tylko biegnie.
+- Capra po ponownym przeniesieniu (§18): nie testowana.
+
+**Otwarte:** dociąganie R1 przy lądowaniu, odbicie młota przy R2, sprint przy namierzeniu ograniczony do biegu.
