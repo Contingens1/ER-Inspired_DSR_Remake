@@ -70,6 +70,19 @@ static void LogDump() {
     LeaveCriticalSection(&g_logLock);
 }
 
+// Automatic F8 for events the player does not notice (hang repairs, silent move-flag drops) and on exit, so a test
+// without F8 still leaves the history in the file (ER_DIAG only; at most one dump per kAutoDumpGapMs, exit always).
+constexpr DWORD kAutoDumpGapMs = 5000;
+static void LogAutoDump(const char* why, bool force = false) {
+    if (!kDiag) return;
+    static DWORD last = 0;
+    DWORD now = GetTickCount();
+    if (!force && last && now - last < kAutoDumpGapMs) return;
+    last = now ? now : 1;
+    LogDump();
+    Log("===== AUTO-ZAPIS (%s) =====", why);
+}
+
 static void OpenLog(HMODULE self) {
     char path[MAX_PATH];
     GetModuleFileNameA(self, path, MAX_PATH);
@@ -320,6 +333,8 @@ static bool g_omniRollOn = true;         // F5 (diag) / er_engine.ini [Roll] Omn
 static BYTE* ChrPosData();               // defined below in AirControl section
 static BYTE* g_inputCtx = nullptr;       // local player's input ctx (0x396860)
 static void* g_playerAnimCtx = nullptr;  // local player's PlayAnim ctx (g_inputCtx + 0x3A0)
+static bool g_attackFaceOn = false;    // [Roll] AttackFaceTarget (test): attack after a locked-on roll faces the target
+static void AttackFaceOnRollStart();   // below ScanEnemyAggro
 static float g_omniLastStickYaw = 0.0f;
 static DWORD g_omniLastStickAt = 0;
 static bool g_omniArmed = false;
@@ -510,6 +525,7 @@ static void OmniRollOnPlayAnim(void* ctx, int anim, int layer, int a6) {
             g_omniActive = true;
             g_omniActiveYaw = yaw;
             g_omniHoldElapsed = 0.0f;
+            AttackFaceOnRollStart();  // reads the pre-roll yaw, so before the roll yaw is applied
             OmniApplyYawNow(g_omniActiveYaw);
             if (kDiag)
                 Log("[%7lu ms] omniroll: commit anim=%d yaw=%.3f rad%s", now - g_t0, anim, g_omniActiveYaw,
@@ -527,6 +543,7 @@ static void OmniRollOnPlayAnim(void* ctx, int anim, int layer, int a6) {
 static bool g_freeStaminaOn = true;  // [Stamina] FreeOutOfCombat (see FreeStaminaTick)
 static bool g_artOn = false;         // [Bosses] ArtoriasPhase2, resolved (see ArtoriasPhaseTick)
 static bool g_hangRepairOn = true;   // [Fixes] HangRepair (see HangRepairTick)
+static bool g_hangRepairV2On = false;  // [Fixes] HangRepairV2 (test): silent move-flag drops, faster repair
 static bool g_itemHitCancelOn = true;  // [Items] HitCancelsItem (see ItemUpperOnPlayAnim)
 
 // [Bosses] ArtoriasPhase2: 1 on, 0 off, 2 auto (default) = on only when this run loads the Artorias boss files:
@@ -567,7 +584,10 @@ static void LoadConfigIni() {
     g_freeStaminaOn = GetPrivateProfileIntA("Stamina", "FreeOutOfCombat", 1, iniPath) != 0;
     g_itemHitCancelOn = GetPrivateProfileIntA("Items", "HitCancelsItem", 1, iniPath) != 0;
     g_hangRepairOn = GetPrivateProfileIntA("Fixes", "HangRepair", 1, iniPath) != 0;
-    Log("config: HangRepair=%d", g_hangRepairOn ? 1 : 0);
+    g_hangRepairV2On = GetPrivateProfileIntA("Fixes", "HangRepairV2", 0, iniPath) != 0;
+    g_attackFaceOn = GetPrivateProfileIntA("Roll", "AttackFaceTarget", 0, iniPath) != 0;
+    Log("config: AttackFaceTarget=%d", g_attackFaceOn ? 1 : 0);
+    Log("config: HangRepair=%d HangRepairV2=%d", g_hangRepairOn ? 1 : 0, g_hangRepairV2On ? 1 : 0);
     char artWhy[MAX_PATH + 64];
     g_artOn = ResolveArtoriasPhase2(GetPrivateProfileIntA("Bosses", "ArtoriasPhase2", 2, iniPath), artWhy, sizeof(artWhy));
     Log("config: OmniRoll=%d RollBuffer=%d LockOnSprint=%d FreeOutOfCombat=%d HitCancelsItem=%d (%s)", g_omniRollOn ? 1 : 0,
@@ -734,9 +754,12 @@ static BYTE* g_freeStamChr = nullptr;    // character whose flag this DLL set
 // attacks always cost stamina, so the flag is up only while no full-body animation plays.
 static bool IsFreeStaminaAnim(int a) { return a == -1; }
 
+static void AttackFaceOnMainAnim(int prev, int anim);  // below ScanEnemyAggro ([Roll] AttackFaceTarget)
+
 // Called from PlayAnimDetour for the player's layer 7.
 static void TrackPlayerMainAnim(int animId, int layer) {
     if (layer != 7) return;
+    AttackFaceOnMainAnim(g_mainAnim, animId);
     g_mainAnim = animId;
     if (!IsFreeStaminaAnim(animId)) {
         // Drop the flag right away: the cost of this action may be charged before the next input tick.
@@ -823,6 +846,129 @@ static bool ScanEnemyAggro(AggroScan& out) {
         return false;
     }
     return true;
+}
+
+// --- Attack right after a locked-on roll faces the target ([Roll] AttackFaceTarget) ---------------
+// Player report 2026-11-14: OmniRoll plays the forward roll turned to the roll direction and holds that yaw, so
+// after a side roll next to a boss the character looks past it, and an attack started at once goes out ~45 deg
+// off (DS1 attacks turn only at a limited rate at their start; ER turns a locked-on attack to the target).
+// The lock-on target field is not known: at the roll start (the character still faces the target, as every
+// locked-on character does) the enemy closest to that facing is remembered; an attack that starts out of the
+// roll or within kFaceWindowMs after it is turned to that enemy's current position (yaw held kFaceHoldFrames
+// physics steps, the OmniRoll hold ends).
+constexpr DWORD kFaceWindowMs = 400;
+constexpr float kFacePickMaxDeg = 40.f, kFaceMaxDist = 15.f;
+constexpr int kFaceHoldFrames = 3;
+static BYTE* g_faceTarget = nullptr;
+static DWORD g_faceRollEndAt = 0;
+static float g_faceYaw = 0.f;
+static int g_faceHold = 0;
+
+static bool EnemyPos(BYTE* chr, float& x, float& z, int& hp) {
+    __try {
+        BYTE* pos = *reinterpret_cast<BYTE**>(*reinterpret_cast<BYTE**>(chr + 0x68) + 0x28);
+        x = *reinterpret_cast<float*>(pos + 0x10);
+        z = *reinterpret_cast<float*>(pos + 0x18);
+        hp = *reinterpret_cast<int*>(chr + 0x3E8);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+// Enemy (any character with an AI) closest to the facing yaw from (px, pz), within kFacePickMaxDeg / kFaceMaxDist.
+static BYTE* PickEnemyAhead(float px, float pz, float yaw, float& outDeg, float& outDist) {
+    BYTE* best = nullptr;
+    outDeg = 1e9f; outDist = 0.f;
+    float fx = -sinf(yaw), fz = -cosf(yaw);
+    __try {
+        auto base = reinterpret_cast<BYTE*>(GetModuleHandleA(nullptr));
+        ULONG_PTR vtEnemy = reinterpret_cast<ULONG_PTR>(base) + kEnemyInsVtableRva;
+        BYTE* w = *reinterpret_cast<BYTE**>(base + 0x1C77E50);
+        if (!w) return nullptr;
+        int blocks = *reinterpret_cast<int*>(w + 0x28);
+        BYTE* arr = *reinterpret_cast<BYTE**>(w + 0x30);
+        if (blocks <= 0 || blocks > 64 || reinterpret_cast<ULONG_PTR>(arr) < 0x10000) return nullptr;
+        for (int b = 0; b < blocks; b++) {
+            BYTE* blk = arr + b * 0xE8;
+            int n = *reinterpret_cast<int*>(blk + 0x48);
+            BYTE* ent = *reinterpret_cast<BYTE**>(blk + 0x50);
+            if (n <= 0 || n > 2048 || reinterpret_cast<ULONG_PTR>(ent) < 0x10000) continue;
+            for (int i = 0; i < n; i++) {
+                BYTE* chr = *reinterpret_cast<BYTE**>(ent + i * 0x38);
+                if (reinterpret_cast<ULONG_PTR>(chr) < 0x10000 || AiStateOfEnemy(chr, vtEnemy) < 0) continue;
+                float x, z; int hp;
+                if (!EnemyPos(chr, x, z, hp) || hp <= 0) continue;
+                float dx = x - px, dz = z - pz, d = sqrtf(dx * dx + dz * dz);
+                if (!(d > 0.1f && d <= kFaceMaxDist)) continue;
+                float c = (dx * fx + dz * fz) / d;
+                float deg = acosf(c < -1.f ? -1.f : (c > 1.f ? 1.f : c)) * 57.29578f;
+                if (deg <= kFacePickMaxDeg && deg < outDeg) { best = chr; outDeg = deg; outDist = d; }
+            }
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+    return best;
+}
+
+// From OmniRollOnPlayAnim, before the roll yaw is applied (locked-on omni roll only).
+static void AttackFaceOnRollStart() {
+    g_faceTarget = nullptr;
+    if (!g_attackFaceOn) return;
+    BYTE* pos = ChrPosData();
+    if (!pos) return;
+    float px, pz, yaw;
+    __try {
+        yaw = *reinterpret_cast<float*>(pos + 0x04);
+        px = *reinterpret_cast<float*>(pos + 0x10);
+        pz = *reinterpret_cast<float*>(pos + 0x18);
+    } __except (EXCEPTION_EXECUTE_HANDLER) { return; }
+    float deg, dist;
+    g_faceTarget = PickEnemyAhead(px, pz, yaw, deg, dist);
+    if (kDiag)
+        Log("[%7lu ms] attack face: roll start, %s", GetTickCount() - g_t0,
+            g_faceTarget ? "target picked" : "no enemy ahead");
+    if (kDiag && g_faceTarget) Log("  target %p %.1f m, %.0f deg off the facing", g_faceTarget, dist, deg);
+}
+
+static void AttackFaceOnMainAnim(int prev, int anim) {
+    DWORD now = GetTickCount();
+    bool prevRoll = prev >= 700 && prev < 800;
+    if (prevRoll && anim == -1) { g_faceRollEndAt = now ? now : 1; return; }
+    int id = anim % 10000;
+    bool attack = anim >= 200000 && id >= 3000 && id < 6000;
+    if (!attack) {
+        if (anim >= 0 && !(anim >= 700 && anim < 800)) g_faceTarget = nullptr;  // another action: forget the target
+        return;
+    }
+    BYTE* target = g_faceTarget;
+    g_faceTarget = nullptr;
+    if (!g_attackFaceOn || !target) return;
+    bool afterRoll = prevRoll || (g_faceRollEndAt && now - g_faceRollEndAt <= kFaceWindowMs);
+    if (!afterRoll) return;
+    BYTE* pos = ChrPosData();
+    float tx, tz; int hp;
+    if (!pos || !EnemyPos(target, tx, tz, hp) || hp <= 0) return;
+    float px, pz, yaw;
+    __try {
+        yaw = *reinterpret_cast<float*>(pos + 0x04);
+        px = *reinterpret_cast<float*>(pos + 0x10);
+        pz = *reinterpret_cast<float*>(pos + 0x18);
+    } __except (EXCEPTION_EXECUTE_HANDLER) { return; }
+    float dx = tx - px, dz = tz - pz;
+    if (dx * dx + dz * dz < 0.01f) return;
+    float want = atan2f(-dx, -dz);
+    float delta = want - yaw;
+    while (delta > 3.14159265f) delta -= 6.2831853f;
+    while (delta < -3.14159265f) delta += 6.2831853f;
+    g_omniActive = false;  // the roll's yaw hold must not undo the turn
+    g_faceYaw = want;
+    g_faceHold = kFaceHoldFrames;
+    OmniApplyYawNow(want);
+    if (kDiag)
+        Log("[%7lu ms] attack face: anim %d %s, turned %+.0f deg to the target (%.1f m)", now - g_t0, anim,
+            prevRoll ? "out of the roll" : "after the roll", delta * 57.29578f, sqrtf(dx * dx + dz * dz));
 }
 
 // --- Artorias phase 2 (boss test package, docs/PLAN_PROJEKTU.md §6a) ----------------------------
@@ -1359,8 +1505,10 @@ static void ItemUpperOnPlayAnim(void* ctx, void* out, int anim, int layer, char 
 // on any layer (attacks, items, hit reactions, fog gates and other events on layers 10/25 ...). Test 2026-11-13:
 // the move flag ActionCtrl+0x1DC 0x100000 also drops during attacks, items and the fog gate - only the roll
 // case is the hang.
+static DWORD g_lastAnimReqAt = 0;  // last player animation request on any layer but 28 (V2: "silent" flag drops)
 static void HangRepairOnPlayAnim(int anim, int layer) {
     static int lastL7 = -1;
+    if (anim >= 0 && layer != 28) { DWORD t = GetTickCount(); g_lastAnimReqAt = t ? t : 1; }
     if (layer == 7) {
         DWORD now = GetTickCount();
         if (anim == -1 && lastL7 >= 700 && lastL7 < 800) g_rollEndAt = now ? now : 1;
@@ -2321,9 +2469,11 @@ constexpr DWORD kMoveFlag = 0x100000;
 constexpr DWORD kRepairAfterMs = 150;
 constexpr DWORD kRepairMinGapMs = 2000;
 constexpr DWORD kRepairRollWindowMs = 5000;  // the repair only acts this long after a roll ended (g_rollEndAt)
+constexpr DWORD kRepairAfterMsV2 = 60;       // [Fixes] HangRepairV2: ~4 frames frozen before the repair
 
 static void HangRepairTick(void* p3) {
     static DWORD lastWord = 0xFFFFFFFFu, frozenSince = 0, repairedAt = 0, lastRepairAt = 0, mainSince = 0;
+    static DWORD prevWord = kMoveFlag;  // flag word of the previous tick (V2: state just before an item use began)
     static int lastMain = -2;
     static float lastX = 0.f, lastZ = 0.f;
     DWORD now = GetTickCount();
@@ -2361,11 +2511,39 @@ static void HangRepairTick(void* p3) {
         repairedAt = 0;
     }
     bool afterRoll = g_rollEndAt && now - g_rollEndAt < kRepairRollWindowMs;
+    // [Fixes] HangRepairV2 (docs/PLAN_NOCY_2026-11-13.md, logs 2026-11-13/14): the hangs are not only after rolls
+    // (14.11 00:3x: 16 s of plain running, lock-on, then the bit went) and the after-roll window is cleared by any
+    // animation on another layer (an Estus started in the hang closed it at once). What separates them in all logs:
+    // every normal drop of the bit comes with an animation request in the same frame (pick-up 7412 on layers 10/25,
+    // two-hand switch 91 / 30091 on 5/17, attacks / items / hits), the hang drops come with none ("silent").
+    // V2: a silent drop on the ground opens the repair window until the bit is back, a body / hit animation plays or
+    // kSilentWindowMs pass (an item use in between is waited out: frozen needs no item animation); wait 60 ms.
+    constexpr DWORD kSilentWindowMs = 20000;
+    static DWORD silentDropAt = 0;
+    if (g_hangRepairV2On) {
+        if ((prevWord & kMoveFlag) && !(word & kMoveFlag) && ground && g_mainAnim == -1 && g_playerDmgAnim == -1 &&
+            g_itemUpperAnim == -1 && !(g_lastAnimReqAt && now - g_lastAnimReqAt < 150)) {
+            silentDropAt = now ? now : 1;
+            Log("[%7lu ms] hang repair v2: silent drop of the move flag (%08lX -> %08lX, no animation request for %lu ms, "
+                "axes %.2f %.2f)", now - g_t0, prevWord, word, g_lastAnimReqAt ? now - g_lastAnimReqAt : 0, g_axis[0],
+                g_axis[1]);
+            if (sqrtf(g_axis[0] * g_axis[0] + g_axis[1] * g_axis[1]) > 0.5f) LogAutoDump("silent drop");  // idle drops (no stick) only logged
+        }
+        if (silentDropAt && ((word & kMoveFlag) || g_mainAnim != -1 || g_playerDmgAnim != -1 ||
+                             now - silentDropAt > kSilentWindowMs)) {
+            Log("[%7lu ms] hang repair v2: window closed after %lu ms (flag %08lX, main anim %d, hit anim %d)",
+                now - g_t0, now - silentDropAt, word, g_mainAnim, g_playerDmgAnim);
+            silentDropAt = 0;
+        }
+        if (silentDropAt) afterRoll = true;
+    }
+    prevWord = word;
     bool frozen = afterRoll && !(word & kMoveFlag) && mag > 0.5f && g_mainAnim == -1 && g_playerDmgAnim == -1 &&
                   g_itemUpperAnim == -1 && !g_airAtkMoveLock && ground && step < 0.004f;
     if (!frozen) { frozenSince = 0; return; }
     if (!frozenSince) frozenSince = now ? now : 1;
-    if (!g_hangRepairOn || now - frozenSince < kRepairAfterMs || (lastRepairAt && now - lastRepairAt < kRepairMinGapMs)) return;
+    DWORD wait = g_hangRepairV2On ? kRepairAfterMsV2 : kRepairAfterMs;
+    if (!g_hangRepairOn || now - frozenSince < wait || (lastRepairAt && now - lastRepairAt < kRepairMinGapMs)) return;
     __try {
         *reinterpret_cast<DWORD*>(action + 0x1DC) = word | kMoveFlag;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
@@ -2374,6 +2552,7 @@ static void HangRepairTick(void* p3) {
     lastWord = word | kMoveFlag;
     Log("[%7lu ms] hang repair: ActionCtrl+0x1DC %08lX -> %08lX after %lu ms frozen (no body animation for %lu ms, "
         "axes %.2f %.2f)", now - g_t0, word, word | kMoveFlag, now - frozenSince, now - mainSince, g_axis[0], g_axis[1]);
+    LogAutoDump("hang repair");
     repairedAt = lastRepairAt = now ? now : 1;
     frozenSince = 0;
     g_rollEndAt = 0;
@@ -2671,6 +2850,7 @@ static DWORD WINAPI QuitHotkeyThread(LPVOID) {
         held = down ? held + 1 : 0;
         if (held >= 20) {
             Log("[%7lu ms] Ctrl+Q: wyjscie do pulpitu", GetTickCount() - g_t0);
+            LogAutoDump("Ctrl+Q", true);
             TerminateProcess(GetCurrentProcess(), 0);
         }
     }
@@ -2683,6 +2863,18 @@ using ChrPhysStepFn = void(__fastcall*)(BYTE* posData, float dt);
 static ChrPhysStepFn g_origChrPhysStep = nullptr;
 
 static void __fastcall ChrPhysStepDetour(BYTE* posData, float dt) {
+    if (g_faceHold > 0 && posData && posData == ChrPosData()) {  // [Roll] AttackFaceTarget: turn held a few steps
+        __try {
+            *reinterpret_cast<float*>(posData + 0x04) = g_faceYaw;
+            *reinterpret_cast<float*>(posData + 0x144) = 0.0f;
+        } __except (EXCEPTION_EXECUTE_HANDLER) {}
+        g_origChrPhysStep(posData, dt);
+        __try {
+            *reinterpret_cast<float*>(posData + 0x04) = g_faceYaw;
+        } __except (EXCEPTION_EXECUTE_HANDLER) {}
+        --g_faceHold;
+        return;
+    }
     bool hold = g_omniActive && g_omniRollOn && posData && posData == ChrPosData();
     if (hold) {
         __try {
@@ -2790,6 +2982,7 @@ BOOL WINAPI DllMain(HMODULE self, DWORD reason, LPVOID) {
         if (HANDLE t = CreateThread(nullptr, 0, InitThread, nullptr, 0, nullptr)) CloseHandle(t);
     } else if (reason == DLL_PROCESS_DETACH && g_log) {
         MH_Uninitialize();
+        LogAutoDump("koniec gry", true);
         Log("er_engine wyladowany");
         fclose(g_log);
     }
