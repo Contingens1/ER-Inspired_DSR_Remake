@@ -127,3 +127,52 @@ Gałąź `night-2026-11-14`. Bez commitów na `main` i bez wydań. Nocna DLL: `d
   1. AI DSR przepisane na wzór NR: obrót w ataku, czasy odnowienia, strefy dystansu. Efekty 46550/46560 trzeba zastąpić licznikami albo wierszami SpEffect w paramach DSR.
   2. Krótsze klipy NR 3003 i 3004 zostają.
   3. Atak obszarowy wymuszający skok (np. fala przy lądowaniu 3007/3009), jak przy Artoriasie.
+
+## 7. Stray Demon i Demon Firesage
+- **Kto jest kim (z danych):** skrypty AI na mapach:
+  - `c2230` = **Stray Demon** (AI 223000, Azyl `m18_01`);
+  - `c2231` = **Demon Firesage** (AI 223100, Demon Ruins `m14_01`);
+  - `c2232` = Asylum Demon (AI 223200).
+- **Stray i Firesage mają ten sam zestaw ataków:** 3000–3007 i 3500, identyczne długości w TAE. Firesage ma 3 animacje więcej (nie ataki).
+  - Asylum ma inny zestaw: 3000–3014 i 3020–3023.
+  - Nazwy kości Straya i Asylum są identyczne.
+- **Ataki Straya (TAE i ruch kości):**
+
+  | ID | długość | co robi (z danych) |
+  |---|---|---|
+  | 3000 | 5,27 s | zamach młotem, trafienie 1,00–1,50 s, młot przed sobą na ~3,9 m wysokości |
+  | 3001 | 6,17 s | zamach, trafienie 1,03–1,43 s, młot wysoko (5,6 m) |
+  | 3002 | 5,77 s | zamach, trafienie 1,37–1,73 s |
+  | 3003 | 6,57 s | uderzenie lewą ręką, trafienie 2,03–2,33 s |
+  | 3004 | 5,43 s | zachowanie wspólne 20256 (1,20–1,70 s), potem trafienie 1,87–2,07 s; najszybszy zamach (76 m/s) |
+  | 3005 | 7,70 s | **skok z uderzeniem:** miednica 3,2 m w górę, dwa trafienia 3,23–4,17 s |
+  | 3006 | 5,70 s | **pocisk** (bullet 2) przy 1,67 s |
+  | 3007 | 7,90 s | uderzenie 3,17 s, potem **wybuch obszarowy** (bullet 11) przy 3,50 s |
+
+- **Archiwum 12.11:** ataki Straya 3000–3007 mają te same numery i identyfikatory trafień co Erdtree Avatar (`c4810`). Avatar robi 3003 i 3005 około dwa razy szybciej.
+- **Paczka testowa:** `dist\mods\boss_stray_night\launch_stray_night.bat` (`files_c2230_night`, DLL deweloperska, bez DSROmniRoll).
+  - **3002 i 3003 zamienione na klipy Avatara.**
+  - Zdarzenia TAE przesunięte kotwicami: trafienie i okno następnego ataku AI.
+    - 3002: trafienie 1,37–1,73 → 1,17–1,43 s, okno AI 4,73 → 4,17 s, długość 5,77 → 4,93 s;
+    - 3003: trafienie 2,03–2,33 → 1,10–1,33 s, okno AI 5,43 → 3,13 s, długość 6,57 → 3,20 s.
+  - **3005 zostaje z DSR:** ER 3005 to nie skok (korzeń Avatara się nie unosi, u Straya miednica idzie 3,2 m w górę).
+  - AI oryginalne.
+- **Ryzyko:** Avatar nie ma skrzydeł, więc skrzydła Straya stoją w 3002 i 3003 nieruchomo w pozie spoczynkowej.
+- **Test (Ty, Stray w Azylu po powrocie):** wygląd 3002 i 3003 (skrzydła), czy trafienia pasują do ciosu, tempo.
+- **Firesage:** te same dane, więc ta sama droga (`--dsr-chr c2231`). Najpierw trzeba sprawdzić jego szkielet, bo plik ma inne bajty niż Stray.
+
+## 8. Capra Demon → Omen Killer (analiza wykonalności)
+- **ER:** Omen Killer to najpewniej **`c3070`**:
+  - AI 307000, wewnętrzna nazwa `EaterAnOldWoman_Nata` („nata” po japońsku to tasak);
+  - warianty 307010–307040 z innymi brońmi.
+  - Do potwierdzenia przez Ciebie: kojarzysz Omen Killera z Village of the Albinaurics z tasakiem?
+- **Capra DSR `c2240`:** humanoid, ataki 3000–3005 (3,57–5,43 s) i 3500/3501.
+- **Szkielety pasują bardzo dobrze:** 219 z 231 kości Capry ma odpowiednik po nazwie (po ujednoliceniu pisowni: `L Thigh` = `L_Thigh`).
+  - Brakuje kości broni (zostają przy dłoni w pozie spoczynkowej, co jest w porządku), skrętu przedramion (do ręcznej mapy `ForeTwist` → `ForeArmTwist`) i ogona Capry (Omen Killer go nie ma; ogon zostanie nieruchomy).
+- **ER `c3070`:** 13 ataków 3000–3015 (2,3–5,6 s), wiele z kilkoma trafieniami (do 12 w 3004). Klipy są w `c3070_div00…05.anibnd`; do rozpakowania przed portem (tylko TAE i szkielet są w głównym pliku).
+- **Wniosek: wykonalne tą samą drogą co Artorias** (`tools\nr_boss_port.py` dopasowuje kości po nazwie; trzeba dodać ręczne pary dla skrętów).
+  - Ryzyka:
+    - Capra walczy dwoma tasakami, a Omen Killer jednym;
+    - ciasna arena z psami;
+    - pociski i zachowania ER trzeba odtworzyć w paramach DSR.
+  - Paczki nie robiłem.
