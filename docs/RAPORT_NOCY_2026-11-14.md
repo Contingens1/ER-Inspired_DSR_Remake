@@ -483,3 +483,74 @@ Wszystko w paczce nocnej: DLL `c0000_er_engine_night\bin`, animacje `bossy_night
 - Capra po ponownym przeniesieniu (§18): nie testowana.
 
 **Otwarte:** dociąganie R1 przy lądowaniu, odbicie młota przy R2, sprint przy namierzeniu ograniczony do biegu.
+
+## 20. Release 0.5.1 i uwagi gracza z testów bossów (14.11, po południu)
+- **Release 0.5.1** (pre-release, GitHub `v0.5.1`):
+  - zawiera Estusa, podnoszenie w marszu i ataki z wyskoku;
+  - z bossów tylko Artoriasa;
+  - `LockOnSprintFree` i `HangRepairV2` wyłączone.
+- **Zamknięte:** podnoszenie przedmiotów i Estus.
+- **Ataki z wyskoku (w trakcie):**
+  - przy R1 w okolicy lądowania nadal jest pionowe dociąganie albo lekkie mignięcie;
+  - młot przy R2 potrafi się odbić, zwłaszcza przy skoku pod górę po pochyłym terenie.
+- **Skok, korekta do §3:**
+  - ze sprintu: lekki poślizg (model przesuwa się krótko po lądowaniu bez ruchu stóp, potem wraca do biegu);
+  - z biegu, nowe: lekkie wyhamowanie. Cel: postać zachowuje prędkość i płynnie wraca do biegu, sprintu albo kolejnego skoku;
+  - F8 jest w logu nocnej DLL.
+- **Sprint przy namierzeniu:** postać da się obrócić w inną stronę niż cel, ale biegnie zamiast sprintować.
+- **Zawieszenie po wczytaniu (test 1):** postać rusza dopiero po animacji wstawania, jak w wanilii. W ER jest inaczej, ale zostaje jak w DSR.
+- **Zawieszenie w trakcie gry:** w dotychczasowych testach nie wystąpiło.
+  - F8 o 12:36 (gracz utknął w teksturze) był z launchera Gaping Dragona (`launch_nr_gaping_ai.bat`).
+  - Ten launcher używa DLL deweloperskiej z `c0000_er_engine\bin`, która **nie ma** `HangRepairV2` (osłona jest tylko w nocnej DLL). Ta sesja nie miała więc poprawki na zawieszenia.
+- **Capra → Omen Killer (`launch_nr_capra_omen.bat`):**
+  - ogon w trakcie ataków śmiesznie wyprostowany (poza spoczynkowa, Omen Killer nie ma ogona, §10);
+  - większość ataków wygląda dobrze i pasuje do trafień, ale część nie trafia: ciosy z zamachem z lewej i sporo innych przelatuje nad modelem gracza;
+    - hipoteza gracza: Capra jest wysoki, więc ostrze idzie nad graczem;
+    - F8 przy chybionych atakach około 11:50;
+  - pojawia się cios oboma tasakami;
+  - tempo szybkie, na razie zostaje.
+- **Gaping Dragon z AI na wzór NR (`launch_nr_gaping_ai.bat`):**
+  - wygląda dobrze, walka trochę dynamiczniejsza, bez nowych błędów;
+  - plucie kwasem bliżej 50% czasu (bez znaczenia);
+  - wbieganie w ścianę przy szarży blisko ściany (było w oryginale);
+  - zamachy łapą tylko z jego lewej do prawej (zostaje);
+  - atak (chyba ogonem) wypchnął gracza z areny pod tekstury; F8 po wyjściu do menu i powrocie.
+  - **Fala po skoku z wysoka spóźniona** względem uderzenia (problem oryginału). Dane z TAE (3007 skok w miejscu, 3009 skok do przodu):
+    - uderzenie ciałem: zachowanie 170 od 3,50 s;
+    - fala: zachowania 171–173 od 4,20–4,40 s, czyli 0,7–0,9 s po uderzeniu.
+    - Propozycja:
+      - przesunąć 171–173 tuż za 170 (ok. 3,55–3,60 s);
+      - szybko rozchodząca się fala tylko wtedy, gdy da się ją zrobić tanio (do sprawdzenia w BehaviorParam/AtkParam).
+  - **Szarża 3004 prawie zabiła jednym przejazdem** (50 Vigoru, prawie pełne HP). Dane z TAE:
+    - zachowanie 140 jest otwierane co ok. 0,37 s od 2,07 do 6,97 s, czyli 14 okien;
+    - do tego zachowania 300–305 (części ciała) powtarzane 4–5 razy;
+    - każde okno może trafić od nowa, więc gracz w drodze szarży dostaje wiele ciosów.
+    - Propozycja: rzadsze okna 140 albo mniejsze obrażenia w AtkParam.
+- **Stray Demon (`launch_stray_night.bat`, `c2230`):**
+  - Bez pomyłki z Firesage'em:
+    - paczka podmienia tylko `c2230.anibnd` (Stray, AI 223000, Azyl `m18_01`), a Firesage to `c2231` w Demon Ruins;
+    - AI jest oryginalne, zmienione są tylko klipy 3002 i 3003 (z Avatara).
+  - Obserwacja gracza:
+    - po kilku pierwszych atakach kilka skoków pod rząd (3005, skrzydła ruszały się);
+    - potem prawie wyłącznie wybuch przed siebie (3007);
+    - raz uderzenie w ziemię z wybuchem;
+    - brak poprawy.
+  - Fala w 3007 spóźniona względem ciosu:
+    - cios (zachowanie 180) 3,17 s;
+    - wybuch (pocisk 11) 3,50 s.
+    - W 3005 (skok) drugie trafienie 151 trwa 3,53–4,17 s, po uderzeniu 150 (3,23 s).
+  - Monotonia 3007: do sprawdzenia w logu i AI, czy to wybór oryginalnego AI przy tym dystansie. Klipy 3002 i 3003 są krótsze, co może zmieniać, jak często AI je wybiera.
+  - Wniosek na teraz: zmiana nie poprawiła walki.
+- **Centipede Demon:**
+  - Wariant A (`launch_nr_centipede_night.bat`):
+    - model już nie chowa się pod lawę (pojawia się salto z wyrzutem macki);
+    - nadal nie da się trafić macki, dopóki boss nie podejdzie blisko: miecz przelatuje przez wyrzuconą mackę.
+  - Wariant B (`launch_nr_centipede_night_b.bat`):
+    - hitboxa na mackach też chyba nie ma, ale trudno to sprawdzić, bo macka jest wyrzucona krócej;
+    - obrażenia przychodzą bardzo późno po uderzeniu;
+    - wyrzut wygląda na szybszy i nieskorelowany z obrażeniami.
+  - Wariant A wygląda lepiej. W żadnym nie ma trafialnych macek, więc problem trafienia nie leży w klipach NR (§5), tylko w hitboxach ciała (części trafialne DSR są przy innych kościach albo nie podążają za wyrzutem).
+- **Porządek w launcherach:** gracz nie wie, który launcher klikać. Ustalenie:
+  - zmiany bossów, które są stabilne, łączymy w jednym launcherze;
+  - osobny launcher tylko z konkretnego powodu;
+  - przy każdym launcherze jasno: co uruchomić i jakie testy zrobić.
