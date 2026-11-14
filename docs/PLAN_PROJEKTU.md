@@ -63,8 +63,19 @@ Stan na 2026-11-13. Skrócona wersja: tylko to, co jest aktualne. Pełna histori
 - **Szablony paczki:** `native\er_engine\setup\Setup.ps1` (okno „konfiguracja", launcher), `setup\Update.ps1`, `README_release.md` (placeholdery `{VERSION}`, `{REPO}`, `{EXE_SHA256}`).
 - **Mod dev:** `dist\mods\c0000_er_engine\` — `files\chr\` (anibnd gracza, `c0000.esd.dcx`), `files\param\GameParam\` (lockcam), `bin\er_engine.dll` + `er_engine.ini` (ini nie jest w repo), start `launch_er_engine.bat` (offline, ME2 z `toolsy\ModEngine2`).
 - **Log (dev):** `dist\mods\c0000_er_engine\bin\er_engine.log`; bufor 6000 linii × 240 znaków, F8 = znacznik + zrzut. Diag: F5 OmniRoll, F6 bufor uniku, F7 rozpęd w skoku, F8 znacznik, F9 `ForceEndPlayerAnim`.
+- **Launcher testowy (od 2026-11-14 popołudnie, jedyny): `dist\mods\bossy_nightreign\launch_test_all.bat`** (`config_test_all.toml`).
+  - **Co ładuje:**
+    - nocną DLL (F5–F9, `HangRepairV2`, log w `c0000_er_engine_night\bin\`);
+    - testowe pliki ruchu gracza `files_c0000_night`: tu najpierw trafiają nowe poprawki ruchu, więc testy bossów zawsze mają aktualny movement;
+    - pliki głównego moda;
+    - bossów: Artorias (`files_c4100_v2_test`), Capra jako Omen Killer (`files_c2240_omen`), Gaping Dragon z AI NR (`files_c5260_ai`), Centipede wariant A (`files_c5200_night`).
+  - **Zasady:**
+    - Boss, który psuje grę: `enabled = false` w jego linii.
+    - Nowy launcher tylko z konkretnego powodu (kolizja plików, porównanie wariantów), zawsze z opisem testów.
+    - Stare launchery są w `dist\mods\_archive_2026-11-14\` (`folder__nazwa.bat`), Stray poza paczką (zmiana bez poprawy).
+  - Wydanie / dev bez bossów testowych: `dist\mods\c0000_er_engine\launch_er_engine.bat`.
 - **Paczki testowe (od 2026-11-13 noc):**
-  - **Artorias:** `dist\mods\bossy_nightreign\launch_nr_artorias_test.bat` ładuje `files_c4100_v2_test`, budowane przez `nr_boss_port.py … --tag _v2_test`, `artorias_phase2.py --tag _v2_test [--easy]` i `make_artorias_ai.py --tag _v2_test`.
+  - **Artorias:** (dawniej `launch_nr_artorias_test.bat`, teraz w `launch_test_all.bat`) ładuje `files_c4100_v2_test`, budowane przez `nr_boss_port.py … --tag _v2_test`, `artorias_phase2.py --tag _v2_test [--easy]` i `make_artorias_ai.py --tag _v2_test`.
   - **DLL:** z `dist\mods\c0000_er_engine_night\bin\` (`build.bat <folder>`, ini z `[Fixes] HangRepairV2=1`), **log też tam**.
   - **Stan:** kod `HangRepairV2` jest w `er_engine.cpp` i domyślnie wyłączony (ini 0), więc wydanie bez zmian. Niezacommitowany do testu w grze — plan nocy, punkt 1.
 - **Migawki (folder `work\`; powrót = skopiować `files\`, `bin\` → `dist\mods\c0000_er_engine\`, `native\` → `native\er_engine\`, `tools\` → `tools\`):** `V13_STAMINA\` (V12 + darmowy sprint; ostatni pełny stan przed zmianami DLL z 2026-11-13 popołudnie), `V12_ITEMS\`, `V11_ROLLS\` (= v0.2.0). DLL z 2026-11-13: `DLL_PROBE_2026-11-13\`, `DLL_ITEMHIT_2026-11-13\`, `DLL_QUEUEDROLL_2026-11-13\`. Ataki z wyskoku: `*.JUMPATK_V29.*`. Brak migawki stanu v0.3.0 poza samą paczką w `dist\release\` — zrobić `work\V14_…` po teście.
