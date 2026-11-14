@@ -2378,7 +2378,7 @@ static void ReportDrinkDiff() {
 // player was really walking, and when the frozen state lasts kHangAfterMs it logs every dword that
 // differs, plus the input and DLL state. Compare several reports: fields that differ every time are the
 // candidates (the drink probe found the action permissions the same way: ActionCtrl+0x1A0..0x1B7).
-constexpr DWORD kHangAfterMs = 600;
+constexpr DWORD kHangAfterMs = 1200;  // 600 gave false alarms (standing up, short game-side holds)
 static BYTE g_walkSnap[3][kSnapSize];
 static bool g_walkSnapOk = false;
 
@@ -2519,9 +2519,23 @@ static void HangRepairTick(void* p3) {
     // V2: a silent drop on the ground opens the repair window until the bit is back, a body / hit animation plays or
     // kSilentWindowMs pass (an item use in between is waited out: frozen needs no item animation); wait 60 ms.
     constexpr DWORD kSilentWindowMs = 20000;
-    static DWORD silentDropAt = 0;
+    // Load guard (test 2026-11-14): right after a load the game holds the player still for ~1 s and the first frame
+    // drops the bit with no request; the game frees the player itself ~360 ms later. Ignore silent drops for
+    // kLoadGuardMs after the first frame, a frame gap (loading screen / menu) or a new ActionCtrl (new player object).
+    constexpr DWORD kLoadGuardMs = 2000;
+    static DWORD silentDropAt = 0, lastTickAt = 0, loadGuardUntil = 0;
+    static BYTE* lastAction = nullptr;
+    if (!lastTickAt || now - lastTickAt > 1000 || action != lastAction) {
+        loadGuardUntil = now + kLoadGuardMs;
+        silentDropAt = 0;
+    }
+    lastTickAt = now;
+    lastAction = action;
+    bool loadGuard = static_cast<LONG>(loadGuardUntil - now) > 0;
     if (g_hangRepairV2On) {
-        if ((prevWord & kMoveFlag) && !(word & kMoveFlag) && ground && g_mainAnim == -1 && g_playerDmgAnim == -1 &&
+        if (loadGuard && (prevWord & kMoveFlag) && !(word & kMoveFlag))
+            Log("[%7lu ms] hang repair v2: move flag drop ignored (load guard, %08lX -> %08lX)", now - g_t0, prevWord, word);
+        if (!loadGuard && (prevWord & kMoveFlag) && !(word & kMoveFlag) && ground && g_mainAnim == -1 && g_playerDmgAnim == -1 &&
             g_itemUpperAnim == -1 && !(g_lastAnimReqAt && now - g_lastAnimReqAt < 150)) {
             silentDropAt = now ? now : 1;
             Log("[%7lu ms] hang repair v2: silent drop of the move flag (%08lX -> %08lX, no animation request for %lu ms, "
