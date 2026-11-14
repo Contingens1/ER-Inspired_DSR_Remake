@@ -4,10 +4,26 @@ Gałąź `night-2026-11-14`. Bez commitów na `main` i bez wydań. Nocna DLL: `d
 
 ## Testy na rano (w kolejności)
 
-1. **Zawieszenie, osłona po wczytaniu** (nocna DLL, `HangRepairV2=1`): wczytać grę i od razu trzymać W.
-   - Postać nie powinna dostać fałszywej naprawy, a w logu ma być `move flag drop ignored (load guard ...)`.
-   - Potem zwykła gra; po zawieszeniu F8 i zgłoszenie.
-   - Sprawdzone przeze mnie raz (niżej). Ocena zachowania w normalnej grze należy do Ciebie.
+**Uwaga o zapisie:** przy pomiarze skoku (03:4x) postać spadła z urwiska w Darkroot Garden i zginęła. Dusze 0, nic nie przepadło, ale gra zapisała odrodzenie przy ognisku. Jeśli chcesz wrócić do miejsca sprzed nocy, przywróć zapis z Save Organizera.
+
+Wszystkie testy oprócz 4–6 startujesz z `dist\mods\bossy_nightreign\launch_nr_artorias_test.bat` (nocna DLL i paczka podnoszenia).
+
+1. **Zawieszenie: osłona po wczytaniu** (`HangRepairV2=1`):
+   - wczytać grę i od razu trzymać W;
+   - w logu ma być `move flag drop ignored (load guard ...)` i nie ma być `hang repair:`;
+   - potem zwykła gra; po zawieszeniu F8 i zgłoszenie.
+
+   U mnie zadziałało w 2 sesjach (§1.1).
+2. **Podnoszenie przedmiotu (§4):** podnieść przedmiot i od razu ruszyć gałką albo zrobić unik. Ruch powinien być możliwy po ok. 0,5 s, a przedmiot ma trafić do ekwipunku.
+3. **Skok (§3):** sprint, skok, w locie puścić kierunek, lądowanie bez kierunku, F8 zaraz po lądowaniu. Z tego logu zrobię wygaszanie ślizgu.
+4. **Centipede (§5):**
+   - najpierw wariant A `launch_nr_centipede_night.bat`: czy plucie lub atak dystansowy nadal chowa model pod lawę, czy da się trafić przy mackach;
+   - potem, jeśli trzeba, wariant B `launch_nr_centipede_night_b.bat`.
+5. **Stray Demon (§7):** `dist\mods\boss_stray_night\launch_stray_night.bat`. Ocenić ciosy 3002 i 3003 z Avatara: wygląd (skrzydła), trafienia, tempo.
+6. **Decyzje bez gry:**
+   - Gaping Dragon: czy rework AI na wzór NR (§6);
+   - Capra → Omen Killer: czy robić port, i potwierdzenie, że Omen Killer to ten z tasakiem (§8);
+   - postura: czy zaczynamy od Black Knighta (§9).
 
 ## 1. Zawieszenie postaci
 
@@ -216,3 +232,10 @@ Znaczenie numerów 8060/8700 do potwierdzenia podglądem animacji (`render_anim.
 **Rekomendacja na start:** droga 1 na Black Knighcie: mały przeciwnik i gotowe animacje z ripostą.
 - Krok 1 (bez gry): ustalić w TAE 2100 i w Ghidrze, co otwiera okno riposty.
 - Krok 2 (z grą): przełącznik w ini nocnej DLL, test na Black Knighcie.
+
+**Krok 1, wynik (TAE Black Knighta `c2790`, 2100):**
+- 2100 ma przez cały czas oszołomienia (0–1,83 s) dwa zdarzenia: JumpTable **41** i zdarzenie typu **67** (parametr 30).
+- W zwykłych animacjach te zdarzenia nie występują.
+- Animacje 2200 i 2202 mają zdarzenia ofiary (typ 96/109 z `15024–15026`, typ 193 i dźwięki `279003100`), czyli to ciosy krytyczne od strony ofiary.
+
+Hipoteza: JT41 albo typ 67 to „można wykonać ripostę”. Jeśli tak, wystarczy, że DLL zleci wrogowi 2100, a ripostę DS1 obsłuży sama. To trzeba sprawdzić jednym testem w grze: przełącznik w nocnej DLL, który po np. 3 trafieniach zleca 2100 najbliższemu Black Knightowi.
