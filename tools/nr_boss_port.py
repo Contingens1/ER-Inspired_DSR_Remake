@@ -54,10 +54,72 @@ def load_anim(cls, path, comp=None):
     return c, (c.to_interleaved_container() if c.is_spline else c)
 
 
+def align_rest(dnames, dpar, epar, d2e, e2d, dPr, dRr, ePr, min_deg: float):
+    """--align-rest: DSR rest rotations turned so that each bone points like its NR/ER counterpart at rest.
+
+    The port moves each DSR bone by the NR bone's change from ITS rest pose. That is right only when both rest poses
+    are the same. The DSR player skeleton rests in a T-pose (arms level) and the ER one in an A-pose (arms 45 deg
+    down), so every ported arm came out 45 deg higher than in Elden Ring: the Estus flask missed the mouth, arms
+    hanging at the sides looked like a T-pose, the katana jump attack's left arm stood out straight (player tests
+    2026-11-14). Per bone: the smallest rotation taking the DSR direction to its children onto the NR one (children
+    that are children in both skeletons). Bones without such a segment (twist bones, finger tips, weapon) take the
+    rotation of their NR parent's DSR bone (L_UpArmTwist -> L_UpperArm), else of their DSR parent. Differences under
+    min_deg are left alone (different bone lengths, not a different pose), and so are those over max_deg: a different
+    bone layout, not a pose (Capra c2240 vs ER Omen c3070: the only shared child of Head is Jaw, placed above the
+    head bone in DSR and in front of it in ER, 89 deg)."""
+    max_deg = 60.0
+    B = len(dnames)
+    rot: list = [None] * B
+    fixed = []
+    for b in range(B):
+        if b not in d2e:
+            continue
+        x = d2e[b]
+        vd, ve = np.zeros(3), np.zeros(3)
+        for c in range(B):
+            if dpar[c] != b or c not in d2e or epar[d2e[c]] != x:
+                continue
+            od, oe = dPr[0, c] - dPr[0, b], ePr[0, d2e[c]] - ePr[0, x]
+            if np.linalg.norm(od) > 1e-3 and np.linalg.norm(oe) > 1e-3:
+                vd += od / np.linalg.norm(od)
+                ve += oe / np.linalg.norm(oe)
+        if np.linalg.norm(vd) < 1e-3 or np.linalg.norm(ve) < 1e-3:
+            continue  # no segment (or opposite children, e.g. the thighs of the pelvis)
+        vd, ve = vd / np.linalg.norm(vd), ve / np.linalg.norm(ve)
+        ang = float(np.degrees(np.arccos(np.clip(vd @ ve, -1.0, 1.0))))
+        axis = np.cross(vd, ve)
+        if ang < min_deg or ang > max_deg or np.linalg.norm(axis) < 1e-6:
+            rot[b] = R.identity()
+            if ang > max_deg:
+                fixed.append(f"{dnames[b]} {ang:.0f} (skipped: layout)")
+            continue
+        rot[b] = R.from_rotvec(axis / np.linalg.norm(axis) * np.radians(ang))
+        fixed.append(f"{dnames[b]} {ang:.0f}")
+    for _ in range(B):
+        for b in range(B):
+            if rot[b] is not None:
+                continue
+            cands = []
+            if b in d2e:
+                a = epar[d2e[b]]
+                while a >= 0 and a not in e2d:
+                    a = epar[a]
+                if a >= 0:
+                    cands.append(e2d[a])
+            if dpar[b] >= 0:
+                cands.append(dpar[b])
+            src = next((c for c in cands if rot[c] is not None), None)
+            if src is not None:
+                rot[b] = rot[src]
+    rot = [r if r is not None else R.identity() for r in rot]
+    return [rot[b] * dRr[b] for b in range(B)], fixed
+
+
 def port_one(ctx, nr_id: int, dsr_id: int, out: Path) -> dict:
     d, e, TRS, V3, Qt = ctx["d"], ctx["e"], ctx["TRS"], ctx["V3"], ctx["Qt"]
     dnames, dpar, epar, d2e, e2d, S = ctx["dnames"], ctx["dpar"], ctx["epar"], ctx["d2e"], ctx["e2d"], ctx["S"]
     dref, dPr, dRr, eref, ePr, eRr = ctx["dref"], ctx["dPr"], ctx["dRr"], ctx["eref"], ctx["ePr"], ctx["eRr"]
+    dRa = ctx.get("dRa") or dRr  # rest rotations the NR motion is applied to (--align-rest)
     ename = f"a{nr_id // 1000000:03d}_{nr_id % 1000000:06d}.hkx"  # 1003028 = a001_003028 (variant set)
     ec, eint = load_anim(e.AnimationHKX, ctx["ED"] / ename, ctx["comp_for"](ename))
     dc, dint = load_anim(d.AnimationHKX, find_ci(ctx["DD"], f"a00_{dsr_id:04d}.hkx"))
@@ -85,11 +147,11 @@ def port_one(ctx, nr_id: int, dsr_id: int, out: Path) -> dict:
             if ctx["master_carries"] and pel in d2e:
                 x = d2e[pel]
                 T[:, b] = dPr[0, pel] + S * (eP[:, x] - ePr[0, x])
-                Rm[b] = eRot[x] * (eRr[x].inv() * dRr[pel]) * (dRr[pel].inv() * dRr[b])
+                Rm[b] = eRot[x] * (eRr[x].inv() * dRa[pel]) * (dRr[pel].inv() * dRr[b])
             elif b in d2e:
                 x = d2e[b]
                 T[:, b] = dPr[0, b] + S * (eP[:, x] - ePr[0, x])
-                Rm[b] = eRot[x] * (eRr[x].inv() * dRr[b])
+                Rm[b] = eRot[x] * (eRr[x].inv() * dRa[b])
             else:
                 T[:, b] = dref[0][b]
                 Rm[b] = R.from_quat(np.repeat(dref[1][b][None], F, axis=0))
@@ -97,7 +159,7 @@ def port_one(ctx, nr_id: int, dsr_id: int, out: Path) -> dict:
             continue
         if b in d2e and not (ctx["master_carries"] and b == pel):
             x = d2e[b]
-            Rm[b] = eRot[x] * (eRr[x].inv() * dRr[b])
+            Rm[b] = eRot[x] * (eRr[x].inv() * dRa[b])
             a = epar[x]
             while a >= 0 and (a not in e2d or epar[a] < 0):  # the root is never a logical parent
                 a = epar[a]
@@ -431,6 +493,9 @@ def main(argv=None) -> int:
                     help="map a DSR bone to an NR bone of another name (player: R_ForeTwist=R_ForeArmTwist)")
     ap.add_argument("--scale-zero", action="append", default=[], metavar="NR:BONE:T0:T1",
                     help="port: scale this DSR bone to 0 between T0 and T1 s of the NR clip (hidden weapon)")
+    ap.add_argument("--align-rest", type=float, default=0.0, metavar="MIN_DEG",
+                    help="port: turn DSR bones whose rest direction differs from the NR one by >= MIN_DEG onto the NR "
+                         "rest pose first (player: DSR T-pose vs ER A-pose); 0 = off")
     args = ap.parse_args(argv)
 
     load_havok()
@@ -506,6 +571,9 @@ def main(argv=None) -> int:
                comp_for=comp_for, pelvis=pelvis, master_carries=master_carries,
                rm_scale={int(s.split(":")[0]): float(s.split(":")[1]) for s in args.rm_scale},
                rm_straighten=set(args.rm_straighten), rm_window={}, scale_zero={})
+    if args.align_rest > 0:
+        ctx["dRa"], fixed = align_rest(dnames, dpar, epar, d2e, e2d, dPr, dRr, ePr, args.align_rest)
+        say(f"rest pose aligned to NR (>= {args.align_rest:.0f} deg, bone deg): " + (", ".join(fixed) or "none"))
     for s in args.scale_zero:
         nid, bone, t0, t1 = s.split(":")
         ctx["scale_zero"].setdefault(int(nid), []).append((bone, float(t0), float(t1)))

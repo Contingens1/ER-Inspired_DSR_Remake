@@ -60,6 +60,8 @@ def main(argv=None) -> int:
     ap.add_argument("--hide-weapon", action="store_true", help="R_Weapon scale 0 in the ER TAE 710 windows")
     ap.add_argument("--out", type=Path, default=ROOT / "work" / "jump_port")
     ap.add_argument("--dsr-names", action="store_true", help="name outputs aGG_NNNN.hkx (DSR) instead of a0GG_0NNNNN.hkx")
+    # DSR rests in a T-pose, ER in an A-pose: without this every arm came out 45 deg too high (nr_boss_port.align_rest)
+    ap.add_argument("--align-rest", type=float, default=15.0, metavar="MIN_DEG", help="0 = off")
     args = ap.parse_args(argv)
     g = args.group
     args.out = args.out.resolve()  # load_soulsformats() changes the working directory
@@ -126,6 +128,7 @@ def main(argv=None) -> int:
     tag = f"_a{g}"
     for a in ALIASES:
         extra += ["--bone-alias", a]
+    extra += ["--align-rest", str(args.align_rest)]
     rc = nr_boss_port.main(["--nr", "c0000er", "--dsr", "c0000p", "--tag", tag] + extra)
     args.out.mkdir(parents=True, exist_ok=True)
     for cid, new in clips.items():

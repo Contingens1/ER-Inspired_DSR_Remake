@@ -1142,11 +1142,16 @@ static void ArtoriasPhaseTick(void* p3) {
             ArtoriasReset("player dead");
     } __except (EXCEPTION_EXECUTE_HANDLER) {
     }
+    // Writes to the boss (NoDead on / off) only in a frame whose scan has just found him in the enemy list: between
+    // scans the game may free the character (crash 2026-11-14 after the player left the arena past the fog wall
+    // without fighting; the cause is not proven, but a write through a stale pointer is the one risk here).
+    bool fresh = false;
     if (now - scanAt >= 250) {
         scanAt = now;
         int which = 0;
         ThinkIdScan sc;
         BYTE* chr = FindEnemyByThinkId(kArtoriasThinkId, &which, &sc);
+        fresh = chr != nullptr;
         if (chr != g_artChr) {
             if (g_artChr) ArtoriasReset(chr ? "other character" : "boss gone");
             g_artChr = chr;
@@ -1170,7 +1175,7 @@ static void ArtoriasPhaseTick(void* p3) {
     __try {
         DWORD* flags = reinterpret_cast<DWORD*>(g_artChr + 0x524);
         int hp = *reinterpret_cast<int*>(g_artChr + 0x3E8), maxHp = *reinterpret_cast<int*>(g_artChr + 0x3EC);
-        if (!(*flags & kChrNoDead)) {
+        if (fresh && !(*flags & kChrNoDead)) {
             *flags |= kChrNoDead;
             Log("[%7lu ms] artorias: NoDead on (phase %d, hp %d/%d)", now - g_t0, g_artPhase, hp, maxHp);
         }
@@ -1180,7 +1185,7 @@ static void ArtoriasPhaseTick(void* p3) {
                 g_artLowSince = now ? now : 1;
                 Log("[%7lu ms] artorias: hp %d/%d - end of phase 1, waiting for %d", now - g_t0, hp, maxHp,
                     kArtoriasTransitionAnim);
-            } else if (now - g_artLowSince > kArtoriasStuckMs) {
+            } else if (fresh && now - g_artLowSince > kArtoriasStuckMs) {
                 *flags &= ~kChrNoDead;
                 g_artPhase = 2;
                 Log("[%7lu ms] artorias: fail-safe - no transition in %lu s, NoDead off", now - g_t0, kArtoriasStuckMs / 1000);
@@ -1633,13 +1638,17 @@ static void HangRepairOnPlayAnim(int anim, int layer) {
 }
 
 // --- Pick-up while moving ([Items] PickupWhileMoving, test, default 0) ------------------------------
-// The item pick-ups 7410 / 7411 / 7412 run on layers 10/25 (event layer, the whole body, movement locked by the
-// action until the animation ends; test 2026-11-14: 7412 then 7410 with a lock up to 2.77 s). As in Elden Ring the
-// player keeps walking: the request is played as the walkable copy ID+30 (tools/apply_fast_pickup.py
-// --walk-clone 30: JT37 movement possible, no turning lock / i-frames / ignore gravity) on the upper-body layers
-// 5/17, like the walking Estus. Nothing then plays on 10/25. The copy is ended when the game ends the pick-up
-// (but not before kPickupMinMs), when the player attacks / rolls (layer 7) or is hit (layer 11), at the latest
-// after kPickupMaxMs (an upper-body layer otherwise keeps its last pose).
+// The ground pick-up 7520 (and its variants 7521 / 7522) runs on layers 10/25 (event layer, the whole body,
+// movement locked until its cancel windows at 1.27 s; log 2026-11-13: key E -> 7520, move flag down, -1 after
+// 1.27 s). As in Elden Ring the player keeps walking: the request is played as the walkable copy ID+5
+// (tools/apply_fast_pickup.py --walk-clone 5: JT37 movement possible, no turning lock / i-frames / ignore gravity)
+// on the upper-body layers 5/17, like the walking Estus. Nothing then plays on 10/25. The copy is ended when the
+// game ends the pick-up (but not before kPickupMinMs), when the player attacks / rolls (layer 7) or is hit
+// (layer 11), at the latest after kPickupMaxMs (an upper-body layer otherwise keeps its last pose).
+// CORRECTION 2026-11-14: the first version redirected 7410-7412, which are the fog wall (7411 / 7412 turn the
+// player to face it, 7410 walks through it with 2.19 m of root motion): with the switch on, fog walls were walked
+// "through" on the upper body only (player test: glitched through the Artorias fog, crash later in that session).
+constexpr int kPickupFirst = 7520, kPickupLast = 7522, kPickupWalkOffset = 5;
 constexpr DWORD kPickupMinMs = 900, kPickupMaxMs = 2300;
 static bool g_pickupOnUpper = false;
 static DWORD g_pickupAt = 0, g_pickupEndAt = 0;
@@ -1658,7 +1667,15 @@ static void PickupEndUpper(const char* why) {
     Log("[%7lu ms] pickup: upper-body copy ended after %lu ms (%s)", GetTickCount() - g_t0, GetTickCount() - g_pickupAt, why);
 }
 
+// The only pick-up test with the switch on ended in a crash, so its log was lost: every pick-up writes the log
+// to the file 3 s later by itself (ER_DIAG builds), no F8 needed.
+static DWORD g_pickupDumpAt = 0;
+
 static void PickupTick() {
+    if (g_pickupDumpAt && GetTickCount() >= g_pickupDumpAt) {
+        g_pickupDumpAt = 0;
+        LogAutoDump("pickup", true);
+    }
     if (!g_pickupOnUpper) return;
     DWORD now = GetTickCount();
     if (g_pickupEndAt && now >= g_pickupEndAt) PickupEndUpper("game ended the pick-up");
@@ -1668,12 +1685,15 @@ static void PickupTick() {
 // Returns true when the request was replaced (the caller returns without playing the original).
 static bool PickupOnPlayAnim(void* ctx, void* out, int a3, int a4, char a5, int a6, void** ret) {
     bool player = ctx == g_playerAnimCtx || ctx == g_rollCtx;
-    if (a3 >= 7410 && a3 <= 7412 && (a4 == 10 || a4 == 25))
+    bool pickup = a3 >= kPickupFirst && a3 <= kPickupLast && (a4 == 10 || a4 == 25);
+    if (pickup && a4 == 10) {
         Log("[%7lu ms] pickup: anim %d layer %d (ctx %p, player %d, switch %d)", GetTickCount() - g_t0, a3, a4, ctx,
             player ? 1 : 0, g_pickupMoveOn ? 1 : 0);
+        if (kDiag) { DWORD t = GetTickCount() + 3000; g_pickupDumpAt = t ? t : 1; }
+    }
     if (!g_pickupMoveOn || !player) return false;
     DWORD now = GetTickCount();
-    if (a3 >= 7410 && a3 <= 7412 && (a4 == 10 || a4 == 25)) {
+    if (pickup) {
         int upper = a4 == 10 ? 5 : 17;
         if (a4 == 10) {
             g_pickupOnUpper = true;
@@ -1684,8 +1704,9 @@ static bool PickupOnPlayAnim(void* ctx, void* out, int a3, int a4, char a5, int 
             g_pickupA5 = a5;
             g_pickupA6 = a6;
         }
-        *ret = g_origPlayAnim(ctx, out, a3 + 30, upper, a5, a6, upper == 5 ? 2 : 0);
-        if (a4 == 10) Log("[%7lu ms] pickup: %d on layers 10/25 -> %d on the upper body 5/17", now - g_t0, a3, a3 + 30);
+        *ret = g_origPlayAnim(ctx, out, a3 + kPickupWalkOffset, upper, a5, a6, upper == 5 ? 2 : 0);
+        if (a4 == 10)
+            Log("[%7lu ms] pickup: %d on layers 10/25 -> %d on the upper body 5/17", now - g_t0, a3, a3 + kPickupWalkOffset);
         return true;
     }
     if (!g_pickupOnUpper) return false;
@@ -2822,7 +2843,7 @@ static void HangRepairTick(void* p3) {
     // [Fixes] HangRepairV2 (docs/PLAN_NOCY_2026-11-13.md, logs 2026-11-13/14): the hangs are not only after rolls
     // (14.11 00:3x: 16 s of plain running, lock-on, then the bit went) and the after-roll window is cleared by any
     // animation on another layer (an Estus started in the hang closed it at once). What separates them in all logs:
-    // every normal drop of the bit comes with an animation request in the same frame (pick-up 7412 on layers 10/25,
+    // every normal drop of the bit comes with an animation request in the same frame (fog wall turn 7412 on layers 10/25,
     // two-hand switch 91 / 30091 on 5/17, attacks / items / hits), the hang drops come with none ("silent").
     // V2: a silent drop on the ground opens the repair window until the bit is back, a body / hit animation plays or
     // kSilentWindowMs pass (an item use in between is waited out: frozen needs no item animation); wait 60 ms.

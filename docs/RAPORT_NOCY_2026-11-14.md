@@ -12,7 +12,7 @@ Wszystkie testy oprócz 4–6 startujesz z `dist\mods\bossy_nightreign\launch_nr
    - potem zwykła gra; po zawieszeniu F8 i zgłoszenie.
 
    U mnie zadziałało w 2 sesjach (§1.1).
-2. **Podnoszenie przedmiotu (§4):** podnieść przedmiot i od razu ruszyć gałką albo zrobić unik. Ruch powinien być możliwy po ok. 0,5 s, a przedmiot ma trafić do ekwipunku.
+2. **Podnoszenie przedmiotu (§4; uwaga §18: 7410–7412 to ściana mgły, nie podnoszenie):** podnieść przedmiot i od razu ruszyć gałką albo zrobić unik. Ruch powinien być możliwy po ok. 0,5 s, a przedmiot ma trafić do ekwipunku.
 3. **Skok (§3):** sprint, skok, w locie puścić kierunek, lądowanie bez kierunku, F8 zaraz po lądowaniu. Z tego logu zrobię wygaszanie ślizgu.
 4. **Centipede (§5):**
    - najpierw wariant A `launch_nr_centipede_night.bat`: czy plucie lub atak dystansowy nadal chowa model pod lawę, czy da się trafić przy mackach;
@@ -31,7 +31,13 @@ Wszystkie testy oprócz 4–6 startujesz z `dist\mods\bossy_nightreign\launch_nr
 11. **Po zamknięciu gry (§15), `launch_nr_estus_test.bat` albo `launch_nr_artorias_test.bat`:**
    - podnoszenie w marszu: czy postać idzie dalej, czy przedmiot trafia do ekwipunku, F8;
    - atak z wyskoku ze sprintu na płaskim i w dół: czy zniknął ślizg i dociągnięcie do ziemi, F8.
-12. **Decyzje bez gry:**
+12. **Po teście 14.11 ok. 10:10 (§18)** (`launch_nr_estus_test.bat`, a Capra z `launch_nr_capra_omen.bat`):
+   - Estus w miejscu i w marszu: ręka zgięta, butelka przy ustach, bez T-pose po wypiciu;
+   - atak z wyskoku katany (R1 i R2): lewa ręka jak w ER, a nie wyprostowana; lądowanie na płaskim z `LandBlend=300`: czy dociąganie zelżało;
+   - podnoszenie (E) w marszu: czy postać idzie dalej i czy przedmiot trafia do ekwipunku (log zapisze się sam po 3 s);
+   - przejście przez ścianę mgły: normalne, jak w oryginale;
+   - Capra: ręce i tasaki opuszczone jak w ER, nie uniesione.
+13. **Decyzje bez gry:**
    - postura: czy zaczynamy od Black Knighta (§9).
 
 ## 1. Zawieszenie postaci
@@ -440,3 +446,26 @@ Wszystko w paczce nocnej: DLL `c0000_er_engine_night\bin`, animacje `bossy_night
   - Analiza dodatkowa: ER przełącza lądowanie zmienną zachowania `JumpAttack_Land`, a pozy rąk w zamachu i lądowaniu pasują w tym samym czasie. Start lądowania od czasu zamachu (`+0x5C`) zostaje.
 - **Stopy pod ziemią przy lądowaniu katany:** fizyka w porządku (pozycja stała, bez ślizgu), a stopy w klipie mają +0,1 m. Możliwe, że przy przejściu 150 ms (`LandBlend`) z podkulonych nóg w szeroki wypad stopa przechodzi przez podłogę. Do obserwacji; jeśli zostanie, spróbować `LandBlend=80`.
 - Wszystko w paczce nocnej, DLL zainstalowana (gra była zamknięta), kompilacja release OK.
+
+## 18. Po teście gracza 14.11 (ok. 10:10): ręka przy Estusie i katanie, podnoszenie, crash, dociąganie
+- **Ręka przy Estusie i lewa ręka katany (T-pose, butelka mija usta):**
+  - Przyczyna: szkielet DSR stoi w pozie spoczynkowej T (ramiona poziomo), szkielet gracza ER w pozie A (ramiona 45° w dół). Port przenosi zmianę każdej kości od jej pozy spoczynkowej, więc całe ramię wychodziło o 45° wyżej niż w ER. Pomiar: kierunek bark→łokieć i łokieć→dłoń różnił się od ER o 45° w każdej klatce. Ręce opuszczone wzdłuż ciała (koniec picia) wyglądały przez to jak T-pose.
+  - Naprawa: `tools\nr_boss_port.py --align-rest MIN_DEG` najpierw obraca pozę spoczynkową DSR na pozę ER, kość po kości: ramiona, przedramiona, dłonie i palce o 31–45°. Różnice poniżej 15° i powyżej 60° (inny układ kości, np. głowa Capry przez szczękę) zostają bez zmian. `tools\er_player_port.py` używa tego domyślnie (`--align-rest 15`).
+  - Po poprawce kierunki ramion zgadzają się z ER co do 0,1°. Kości skrętu ramienia obracają się tylko wokół osi ramienia.
+  - Przebudowane: Estus (`files_c0000_estus`), ataki z wyskoku katany (`files_c0000_night`, a2x). Kopie sprzed: `work\estus_port_PRE_ALIGN`, `work\jump_port_PRE_ALIGN`, `work\c0000_a00_md.estus_PRE_ALIGN.dcx`, `work\c0000_a*.anibnd.night_PRE_ALIGN.dcx`.
+  - **Capra (Omen Killer z ER) miała ten sam błąd** (ramiona 45°, dłonie 41°, palce 41–55°). Przeniesiona ponownie z `--align-rest 15`, kopia sprzed: `work\c2240.anibnd.omen_PRE_ALIGN.dcx`. Port Artoriasa (NR → DSR) ma zgodne pozy spoczynkowe, bez zmian.
+- **Podnoszenie: błędne animacje (moja pomyłka z §15):**
+  - 7410 to **przejście przez ścianę mgły** (2,19 m ruchu do przodu, efekt mgły, kroki; gra puszcza je graczowi w 98 zdarzeniach map). 7411 i 7412 to obroty o 90° (602/603), którymi zdarzenie mgły ustawia postać przodem do ściany. „Podnoszenie 7412 → 7410” z logu było przejściem przez mgłę.
+  - Skutki w paczce nocnej: przejście przez mgłę dało się przerwać po 0,5 s, a przy `PickupWhileMoving=1` DLL grała je tylko na górnej połowie ciała (bez ruchu przez mgłę). To pasuje do przejścia przez arenę Artoriasa w sesji z crashem.
+  - Prawdziwe podnoszenie to **7520** (klawisz E, warstwy 10/25, 1,83 s, bez ruchu korzenia, okna przerwania od 1,27 s); 7521/7522 to warianty.
+  - Naprawa: `tools\apply_fast_pickup.py --restore 7410 7411 7412 --drop 7440 7441 7442 --anims 7520 7521 7522 --no-cancel --walk-clone 5`. Mgła wraca do oryginału, kopie do chodzenia to 7525–7527 (7550 to istniejąca animacja gry, narzędzie teraz przerywa pracę, zamiast ją nadpisać). DLL przekierowuje tylko 7520–7522. Kopia sprzed: `work\c0000.anibnd.night_PRE_PICKUPFIX.dcx`.
+  - Diagnostyka: 3 s po każdym podniesieniu DLL sama zapisuje log do pliku (bez F8).
+- **Crash 09:42 (zrzut `CrashDumps\DarkSoulsRemastered.exe.27444.dmp`):**
+  - Odczyt przez zły wskaźnik w `exe+0x21073B`: funkcja liczy obrys modelu z tablicy macierzy kości, a wskaźnik tej tablicy ma śmieciową wartość (0x4E8), więc obiekt był już zwolniony albo nadpisany. Na stosie nie ma adresów `er_engine.dll` ani Mod Engine.
+  - Najbardziej prawdopodobne: przekierowane przejście przez mgłę Artoriasa, w tamtej sesji na kopie 7440/7442, które wskazywały nieistniejące pliki animacji. Obie rzeczy są już usunięte.
+  - Dodatkowo: DLL zapisuje flagę NoDead Artoriasa tylko w klatce, w której skan właśnie potwierdził bossa (wcześniej mogła trafić w zwolnioną pamięć w ciągu 250 ms między skanami).
+- **Dociąganie przy lądowaniu R1:**
+  - Klipy ER: zamach trzyma miednicę na wysokości stania (0,93 m) z podkulonymi nogami, lądowanie w tym samym czasie to głęboki wypad (miednica 0,72 m, lewa stopa 0,6 m z tyłu). Na płaskim lądowanie startuje w 0,6–0,7 s, już po wypadzie, więc w 150 ms miednica opada o 22 cm, a lewa stopa przeskakuje 0,37 m do tyłu. Pod górę lądowanie wypada wcześniej, w trakcie wypadu z ruchem do przodu, i wygląda naturalniej (zgodnie z obserwacją gracza).
+  - Ręce w obu klipach pasują do siebie w tym samym czasie, więc dłuższe przejście wygładza głównie nogi. Symulacja przejścia (150 i 300 ms) nie schodzi stopami pod ziemię (najniżej −1 cm).
+  - Test: `[Jump] LandBlend=300` w ini nocnej (było 150).
+- DLL nocna przebudowana (gra zamknięta), kompilacja release (`ER_DIAG=0`) OK. Tabela ataków z wyskoku bez zmian.
