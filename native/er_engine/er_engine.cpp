@@ -456,6 +456,7 @@ static bool g_lockSprintFreeOn = false;  // er_engine.ini [Roll] LockOnSprintFre
 static bool g_landStartTimeOn = false;   // er_engine.ini [Jump] LandStartTime (jump attack section)
 static float g_landBlendSec = 0.f;       // [Jump] LandBlend (ms): swing -> landing pose blend, 0 = the game's 0.03 s
 static float g_landSpeedCap = 0.f;       // [Jump] LandSpeedCap (m/s): horizontal speed cap after touchdown, 0 = off
+static float g_landEndBlendSec = -1.f;   // [Jump] LandEndBlend (ms): blend when the landing ends (-1 = the game's)
 static bool g_lockFreeForced = false;
 static BYTE g_lockFreeSaved = 0;
 
@@ -671,6 +672,11 @@ static void LoadConfigIni() {
     g_landStartTimeOn = GetPrivateProfileIntA("Jump", "LandStartTime", 0, iniPath) != 0;
     g_landBlendSec = GetPrivateProfileIntA("Jump", "LandBlend", 0, iniPath) / 1000.f;
     g_landSpeedCap = static_cast<float>(GetPrivateProfileIntA("Jump", "LandSpeedCap", 0, iniPath));
+    {
+        int ms = GetPrivateProfileIntA("Jump", "LandEndBlend", -1, iniPath);
+        g_landEndBlendSec = ms < 0 ? -1.f : ms / 1000.f;
+        Log("config: LandEndBlend=%d ms", ms);
+    }
     Log("config: LandStartTime=%d LandBlend=%.0f ms LandSpeedCap=%.0f m/s", g_landStartTimeOn ? 1 : 0,
         g_landBlendSec * 1000.f, g_landSpeedCap);
     Log("config: AttackFaceTarget=%d LockOnSprintFree=%d", g_attackFaceOn ? 1 : 0, g_lockSprintFreeOn ? 1 : 0);
@@ -1267,8 +1273,26 @@ static void FreeStaminaTick(const BYTE* ctx, void* p3) {
     }
 }
 
+// Crash dump (diag builds): the log lives in a memory ring until F8, so a crash lost the history (pick-up test
+// 2026-11-14: access violation at exe+0x21073B, FUN_1402106d0 = model bounds from the bone matrices). Installed at
+// the first game frame (after the game's own setup), chained to the previous filter.
+static LPTOP_LEVEL_EXCEPTION_FILTER g_prevCrashFilter = nullptr;
+static LONG WINAPI CrashFilter(EXCEPTION_POINTERS* ep) {
+    auto base = reinterpret_cast<ULONG_PTR>(GetModuleHandleA(nullptr));
+    auto addr = reinterpret_cast<ULONG_PTR>(ep->ExceptionRecord->ExceptionAddress);
+    Log("[%7lu ms] ===== CRASH: code %08lX at %p (exe+0x%llX) =====", GetTickCount() - g_t0,
+        ep->ExceptionRecord->ExceptionCode, ep->ExceptionRecord->ExceptionAddress,
+        static_cast<unsigned long long>(addr - base));
+    LogAutoDump("crash", true);
+    return g_prevCrashFilter ? g_prevCrashFilter(ep) : EXCEPTION_CONTINUE_SEARCH;
+}
+
 static void __fastcall InputDetour(void* ctx, float dt, void* p3) {
-    if (!g_logToRing) { Log("pierwsza klatka gry: dalsze wpisy ida do bufora w pamieci, F8 zrzuca go do pliku"); g_logToRing = true; }
+    if (!g_logToRing) {
+        Log("pierwsza klatka gry: dalsze wpisy ida do bufora w pamieci, F8 zrzuca go do pliku");
+        g_logToRing = true;
+        if (kDiag) g_prevCrashFilter = SetUnhandledExceptionFilter(CrashFilter);
+    }
     PollKeys();
     {   // os ruchu sprzed handlera (hooki osi aktualizuja g_axis w trakcie handlera - tu wartosc z poprzedniej klatki)
         float mag = sqrtf(g_axis[0] * g_axis[0] + g_axis[1] * g_axis[1]);
@@ -1930,6 +1954,16 @@ static void AirAttackPlay(int anim) {  // jak gra: najpierw koniec na 7/23, pote
         for (int layer : {7, 23}) g_origPlayAnim(g_airAtkCtx, out, anim, layer, 0, g_airAtkA6, 0);
 }
 
+// End of the landing (move input or no input): -1 on layers 7/23 with the blend given in the ini instead of the
+// game's default, so the legs do not snap from the ER landing pose to idle / running (test 2026-11-14).
+static void AirAttackEndLanding() {
+    if (g_landEndBlendSec < 0.f) { AirAttackPlay(-1); return; }
+    float b = g_landEndBlendSec;
+    int a6 = *reinterpret_cast<int*>(&b);
+    unsigned long long out[2] = {};
+    for (int layer : {7, 23}) g_origPlayAnim(g_airAtkCtx, out, -1, layer, 0, a6, 0);
+}
+
 static float AirAttackLandMs() { return g_airAtkLandT0 * 1000.f + static_cast<float>(GetTickCount() - g_airAtkLandAt); }
 
 static bool AirAttackOnGround() {
@@ -2136,14 +2170,14 @@ static void AirAttackTick(float dt) {
         g_airAtkMoveLock = ms < g_airAtkRow->landMoveMs;
         float mag = sqrtf(g_axis[0] * g_axis[0] + g_axis[1] * g_axis[1]);
         if (!g_airAtkMoveLock && mag > 0.3f) {  // okno ruchu otwarte i gracz chce isc - konczymy ladowanie
-            AirAttackPlay(-1);
+            AirAttackEndLanding();
             Log("[%7lu ms] atak z wyskoku: ladowanie przerwane ruchem po %.2f s animacji", now - g_t0, ms / 1000.f);
             AirAttackReset();
             return;
         }
         // Bez inputu: koniec, gdy w ER animacja przechodzi juz w postawe (dalej tylko dociaganie pozy).
         if (ms >= g_airAtkRow->landEndMs) {
-            AirAttackPlay(-1);
+            AirAttackEndLanding();
             Log("[%7lu ms] atak z wyskoku: koniec ladowania bez inputu (%.2f s animacji)", now - g_t0, ms / 1000.f);
             AirAttackReset();
         }
@@ -2185,8 +2219,10 @@ static int AirAttackSubstitute(void* ctx, int anim, int layer, int a6) {
         }
         AirAttackReset();
     }
-    // Grupy broni 20-49 oraz grupy specjalne 120-149 (np. R2 topora gargulca = 1254300).
-    bool weapon = (anim >= 200000 && anim < 500000) || (anim >= 1200000 && anim < 1500000);
+    // Grupy broni 20-49 oraz grupy specjalne 90-99 (katana: R2 oburacz w locie = 904300, test 2026-11-14) i 120-149
+    // (np. R2 topora gargulca = 1254300).
+    bool weapon = (anim >= 200000 && anim < 500000) || (anim >= 900000 && anim < 1000000) ||
+                  (anim >= 1200000 && anim < 1500000);
     if (!weapon || (layer != 7 && layer != 23)) return anim;
     if (layer == 7 && anim < 500000 && ctx == g_momCtx) g_lastBaseGroup = anim / 10000;  // zwykla grupa broni gracza
     if (layer == 23 && anim == g_airSubFrom && GetTickCount() - g_airSubAt < 100) return g_airSubTo;
@@ -2204,7 +2240,8 @@ static int AirAttackSubstitute(void* ctx, int anim, int layer, int a6) {
     }
     // Wiersz tabeli: wlasna grupa; dla grupy specjalnej - ostatnia zwykla grupa gracza, potem grupa % 100.
     const JumpAttackRow* row = nullptr;
-    for (int g : {group, group >= 100 ? g_lastBaseGroup : 0, group >= 100 ? group % 100 : 0}) {
+    bool special = group >= 50;
+    for (int g : {group, special ? g_lastBaseGroup : 0, group >= 100 ? group % 100 : 0}) {
         if (!g) continue;
         for (auto& r : kJumpAttacks) if (r.anim == g * 10000 + to) { row = &r; break; }
         if (row) break;

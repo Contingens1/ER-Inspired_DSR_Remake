@@ -426,3 +426,17 @@ Wszystko w paczce nocnej: DLL `c0000_er_engine_night\bin`, animacje `bossy_night
   - DLL `[Items] DrinkStageBlend=0`: etapy 7586, 7587 i 7588 dostają czas przejścia 0 w rekordzie warstwy (`+0x28`). Klipy ER są ciągłe między etapami, więc przejście nie jest potrzebne. Log `drink: stage … blend`.
 - DLL czeka w `work\dll_staging\bin` i kopiuje się do `c0000_er_engine_night\bin` po zamknięciu gry.
 - **Test:** `launch_nr_estus_test.bat`, picie w miejscu i w marszu. Ręka i flaszka przy ustach, bez T-pose, broń bez mignięcia. Przy okazji: atak z wyskoku katana, jeśli jest pod ręką.
+
+## 17. Po teście gracza 14.11 (ok. 10:00): crash przy podnoszeniu, katana, zamiana nóg przy lądowaniu
+- **Crash 09:42:25:** naruszenie dostępu w grze, `exe+0x21073B` = `FUN_1402106d0`, czyli obrys modelu liczony z macierzy kości. Log nie zdążył się zapisać (bufor w pamięci do F8).
+  - Najbardziej prawdopodobna przyczyna: kopie podnoszenia 7440–7442 miały nazwę pliku animacji, która nie istnieje (`a00_7440.HKXwin`), a vanilla pożycza animację z nazwą źródła (7411 → `a00_0602.hkxwin`). Poprawione w `tools\apply_fast_pickup.py`, paczka nocna przebudowana.
+  - Wersja diagnostyczna zrzuca teraz log przy crashu: `===== CRASH: code … (exe+0x…) =====`.
+- **R2 katany w locie nie działał:** gra zleca w powietrzu atak z grupy specjalnej 90 (`904300`), a DLL obsługiwała tylko grupy 20–49 i 120–149. Gra puszczała więc naziemne R2, które przerywało spadanie (ściąganie w dół, ślizg, brak ciosu). DLL bierze teraz dla grup 90–99 atak z wyskoku ostatniej zwykłej grupy broni.
+- **Zamiana nóg przy lądowaniu R1:**
+  - Klipy lądowania ER mają trzy fazy: zetknięcie (lewa noga z przodu), szeroki wypad (prawa 0,8 m z przodu) i szybki krok do postawy (lewa z przodu, jak postawa spoczynkowa DSR).
+  - DLL kończyła lądowanie bez ruchu gałką w chwili „przejście do spoczynku” z TAE ER. Dla R1 wypada to w środku kroku (młot 1,62 s, katana 1,33 s, miecz 1,20 s), a stopy stają dopiero 0,33–0,38 s później. Dla R2 czasy prawie się zgadzały, stąd R2 wyglądał dobrze.
+  - Nowe `tools\er_land_settle.py` liczy z klipów ER chwilę, od której obie stopy są do 3 cm od końcowej postawy; generator używa jej jako końca lądowania. Okna ruchu i ataku bez zmian (czasy ER).
+  - `[Jump] LandEndBlend=200`: koniec lądowania, także przerwany ruchem, z przejściem 200 ms zamiast domyślnego.
+  - Analiza dodatkowa: ER przełącza lądowanie zmienną zachowania `JumpAttack_Land`, a pozy rąk w zamachu i lądowaniu pasują w tym samym czasie. Start lądowania od czasu zamachu (`+0x5C`) zostaje.
+- **Stopy pod ziemią przy lądowaniu katany:** fizyka w porządku (pozycja stała, bez ślizgu), a stopy w klipie mają +0,1 m. Możliwe, że przy przejściu 150 ms (`LandBlend`) z podkulonych nóg w szeroki wypad stopa przechodzi przez podłogę. Do obserwacji; jeśli zostanie, spróbować `LandBlend=80`.
+- Wszystko w paczce nocnej, DLL zainstalowana (gra była zamknięta), kompilacja release OK.

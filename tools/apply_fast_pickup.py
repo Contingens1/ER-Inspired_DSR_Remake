@@ -82,7 +82,10 @@ def main(argv=None) -> int:
                 tae.Animations.Remove(anims.pop(nid))
             # same HKX: an own file is imported by ID (flag 256 + source ID), an imported one keeps its source
             ref = int(a.Unknown2) if int(a.Unknown1) == 256 else aid
-            clone = TAE.Animation(nid, False, 256, ref, f"a00_{nid}.HKXwin")
+            # the file name must be the source's (vanilla 7411 imports 602 as "a00_0602.hkxwin"); the first version
+            # named a non-existent "a00_7440.HKXwin" - suspected cause of the crash in the pick-up test 2026-11-14
+            src_name = str(a.AnimFileName) or f"a00_{ref:04d}.HKXwin"
+            clone = TAE.Animation(nid, False, 256, ref, src_name)
             for e in a.Events:
                 if jt_id(e) in WALK_DROP:
                     continue

@@ -32,6 +32,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from sfbridge import load_soulsformats, read_binder, read_file, to_memory  # noqa: E402
 from tae_compare import DSAS, ER_ANI, template  # noqa: E402
+from er_land_settle import settle_ms  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 CHR = ROOT / "dist/mods/c0000_er_engine/files/chr"
@@ -208,7 +209,11 @@ def main() -> int:
                     tae.Animations.Add(land)
                     added[container].append((int(gg) * 10000 + lid, land_hkx, f"{g}_{lid:04d}.hkx"))
                 idle_at = next((e.StartTime for e in er_ev if int(e.Type) == blend_idle and e.EndTime > 1e30), move_at + 0.3)
-                row[3:] = [full + 1, full + 2, int(round(max(idle_at, move_at + 0.15) * 1000)),
+                # End without input: not before the feet stand in the stance again (tools/er_land_settle.py; the
+                # ER idle-blend time cut R1 landings in the middle of the step back, 2026-11-14)
+                settle = settle_ms(int(eg), er_id + LAND_OFFSET) or 0
+                end_ms = max(int(round(max(idle_at, move_at + 0.15) * 1000)), settle)
+                row[3:] = [full + 1, full + 2, end_ms,
                            int(round((jt_start(er_ev, 4) or move_at) * 1000)), int(round(move_at * 1000))]
                 print(f"  {g}: {new_id + 1}/{new_id + 2} = ladowanie {land_hkx.name}: trafienie {l_hit:.2f} s, atak od {jt_start(er_ev, 4) or move_at:.2f} s, ruch od {move_at:.2f} s, koniec bez inputu {row[5] / 1000:.2f} s")
             rows.append(tuple(row))
