@@ -176,3 +176,43 @@ Gałąź `night-2026-11-14`. Bez commitów na `main` i bez wydań. Nocna DLL: `d
     - ciasna arena z psami;
     - pociski i zachowania ER trzeba odtworzyć w paramach DSR.
   - Paczki nie robiłem.
+
+## 9. Postura i cios krytyczny po przełamaniu (wstępna analiza, bez kodu)
+**Cel:** jak w ER i u Artoriasa w NR. Obrażenia w posturę → przełamanie → przeciwnik oszołomiony → cios krytyczny z większymi obrażeniami.
+
+**Co ma DSR (z danych):**
+- Black Knight `c2790` ma pełny zestaw animacji ofiary i oszołomienia:
+  - **2100** (2,37 s): kandydat na oszołomienie po parowaniu;
+  - **2200, 2202, 2204, 2207, 2209** (2,7–4,8 s): kandydaci na animacje ofiary ciosu w plecy i riposty;
+  - 2500/2510: śmierć.
+
+  To przeciwnik, którego da się sparować w DS1, więc łańcuch „oszołomienie → riposta” (wiersze `ThrowParam` dla jego typu) już istnieje.
+- Bossowie DS1 w większości nie mają animacji ofiary ani wierszy `ThrowParam` (Artorias w DSR nie ma 2100).
+
+**Co ma Artorias w NR (`c7720`, z TAE):** animacje, których nie ma w DSR:
+- **2100** (2,33 s): nowe oszołomienie, czyli NR dorobił mu stan do krytyka;
+- 2000–2003: reakcje na trafienie;
+- 8040–8057 i 8140–8143 (1,6–2,7 s): kandydaci na reakcje na mocne trafienia z kierunków;
+- **8060** (3,23 s) i **8700** (4,87 s): kandydaci na przełamanie postury (długie, bez trafień);
+- 4100/4101: chwyt;
+- 5000–6003, 7000, 7400, 9000, 9500.
+
+Znaczenie numerów 8060/8700 do potwierdzenia podglądem animacji (`render_anim.py`, jak przy 4100).
+
+**Możliwe drogi (od najtańszej):**
+1. **Przeciwnicy, których DS1 już pozwala sparować** (Black Knight i inni humanoidzi):
+   - DLL liczy posturę wroga: suma obrażeń od gracza (spadek HP wroga, który DLL już umie czytać), zanikająca z czasem; próg zależny od typu wroga.
+   - Po przekroczeniu progu DLL zleca wrogowi animację oszołomienia po parowaniu (2100) przez `PlayAnim`, tak jak dziś DLL zleca animacje.
+   - Jeśli to ta sama animacja, której TAE otwiera okno riposty, istniejąca riposta DS1 zadziała bez nowych danych.
+   - **Do sprawdzenia w pierwszej kolejności:** czy okno riposty otwiera samo zdarzenie TAE w 2100, czy dodatkowy stan ustawiany przez grę przy parowaniu (wtedy DLL musi go ustawić; szukanie w Ghidrze `-readOnly`).
+2. **Bossowie bez riposty** (Artorias, Gwyn):
+   - nowe animacje ofiary (z NR dla Artoriasa: 2100 + krytyk);
+   - wiersze `ThrowParam` łączące animację gracza z animacją ofiary;
+   - ta sama logika postury w DLL.
+
+   Średni nakład; zależy od tego, czy portowane animacje ofiary zgrają się z animacją riposty gracza.
+3. **Tylko dane:** wytrzymałość postawy w `NpcParam` daje w DS1 wyłącznie zwykłe zachwianie, bez okna krytyka. Za mało na mechanikę z ER.
+
+**Rekomendacja na start:** droga 1 na Black Knighcie: mały przeciwnik i gotowe animacje z ripostą.
+- Krok 1 (bez gry): ustalić w TAE 2100 i w Ghidrze, co otwiera okno riposty.
+- Krok 2 (z grą): przełącznik w ini nocnej DLL, test na Black Knighcie.
